@@ -16,10 +16,15 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Eigen")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/cubature-master")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/ThreadPool2")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/mcx/pymcx/include")
-add_executable(potter "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cxx")
 
-target_sources(potter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/cubature-master/pcubature.c")
-target_sources(potter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/cubature-master/hcubature.c")
+
+macro(add_cubature target)
+    target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/cubature-master/pcubature.c")
+    target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/cubature-master/hcubature.c")
+endmacro()
+
+add_executable(potter "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cxx")
+add_cubature(potter)
 
 if (MSVC)
     target_sources(potter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/Eigen/debug/msvc/eigen.natvis")
@@ -29,6 +34,9 @@ endif()
 
 #add_executable(cuba-test "${CMAKE_CURRENT_SOURCE_DIR}/src/cuba_test.cxx")
 #target_link_libraries(cuba-test PRIVATE "cuba")
+
+add_executable(catchtest "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/catch_runner.cxx")
+add_cubature(catchtest)
 
 macro(add_nix_libraries target)
     # See https://stackoverflow.com/a/29871891
