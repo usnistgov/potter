@@ -181,9 +181,22 @@ public:
             }
         }
     }
+    /*
+    Add a potential for a particular site-site interaction
+
+    @param iatom The index of site on molecule A
+    @param jatom The index of site on molecule B
+    */
     void add_potential(std::size_t iatom, std::size_t jatom, std::function<double(double)>& f) {
         potential_map[std::make_tuple(iatom, jatom)] = f;
     }
+    /*
+    Get a reference to the potential function for a particular site-site interaction
+    
+    @param i The index of site on molecule A
+    @param j The index of site on molecule B
+
+    */
     auto& get_potential(std::size_t i, std::size_t j) const {
         auto itf = potential_map.find(std::make_tuple(i, j));
         if (itf != potential_map.end()) {
@@ -213,6 +226,9 @@ public:
         return evaltr.eval_pot(molA, molB);
     };
 
+    /* 
+    Given the orientational angles, calculate the integrand
+    */
     void orient_integrand(double theta1, double theta2, double phi, double *fval)
     {
         // Rotate molecule #1
@@ -245,6 +261,37 @@ public:
             }
         }
     }
+    /*
+    Given the separations and angle, calculate the integrand for B_3 for a spherically-symmetric potential
+    for an atomic fluid
+    */
+    void atomic_B3_integrand(const double r12, const double r13, const double eta_angle, double* fval)
+    {
+        // Get the potential function V(r) that we should use
+        auto &pot = this->evaltr.get_potential(0, 0);
+        TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
+        auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r)/Tstar); };
+        auto SQUARE = [](double x) { return x*x; };
+        auto rangle = sqrt(SQUARE(r12) + SQUARE(r13) - 2*r12*r13*eta_angle);
+        auto a = SQUARE(r12)*f(r12)*SQUARE(r13)*f(r13)*f(rangle);
+
+        if constexpr (std::is_same<decltype(Tstar), double>::value) {
+            // If T is double (real)
+            fval[0] = a;
+        }
+        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+            // If T is a complex number (perhaps for complex step derivatives)
+            fval[0] = a.real();
+            fval[1] = a.imag();
+        }
+        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+            // If T is a multicomplex number
+            auto& c = a.get_coef();
+            for (auto i = 0; i < c.size(); ++i) {
+                fval[i] = c[i];
+            }
+        }
+    }
 };
 
 template<typename TYPE>
@@ -258,8 +305,9 @@ public:
 
     Integrator(const Molecule<TYPE>& mol1, const Molecule<TYPE>& mol2) : mol1(mol1), mol2(mol2) {};
 
+    /* For a one-dimensional integration for B_2, use trapezoidal integration to calculate B_2 */
     template <typename TEMPTYPE>
-    TEMPTYPE radial_integrate(TEMPTYPE Tstar, TYPE rstart, TYPE rend, int N) {
+    TEMPTYPE radial_integrate_B2(TEMPTYPE Tstar, TYPE rstart, TYPE rend, int N) {
         using arr = Eigen::Array<TYPE, Eigen::Dynamic, 1>;
         using arrT = Eigen::Array<TEMPTYPE, Eigen::Dynamic, 1>;
         arr rv = exp(arr::LinSpaced(N, log(rstart), log(rend)));
@@ -288,6 +336,9 @@ public:
             m_pool = std::unique_ptr<ThreadPool>(new ThreadPool(Nthreads));
         }
     }
+    /* 
+    A helper function to evaluate the potential given COM separation r and the orientation angles
+    */
     double potential(double r, double theta1, double theta2, double phi){
         Molecule<TYPE> molA = mol1, molB = mol2;
         // Rotate molecule #1
@@ -303,6 +354,9 @@ public:
         auto V = potcls.eval_pot(molA, molB); // And finally evaluate the potential in the form V/epsilon
         return V;
     }
+    /*
+    Calculate the orientationally-averaged potential
+    */
     TYPE orient_averaged_potential(TYPE rstar, Molecule<TYPE> mol1, Molecule<TYPE> mol2) const {
         using SharedData = SharedDataBase<TYPE, double>;
         SharedData shared(0.0, 0.0, mol1, mol2, potcls, {0,0,0}, { M_PI, M_PI, 2 * M_PI });
@@ -326,6 +380,11 @@ public:
     Do the calculations for one temperature
 
     @param order The order of the virial coefficient (2=B_2, 3=B_3, etc.)
+    @param Tstar The temperature
+    @param rstart The initial value of r to be considered in integration
+    @param rend The final value of r to be considered in integration
+    @param mol1 The first molecule
+    @param mol2 The second molecule
     @returns Tuple of (value, estimated error in value)
     @note The return numerical type maybe be one of double, std::complex<double> or MultiComplex<double>
     */
@@ -336,10 +395,21 @@ public:
         // Some local typedefs to avoid typing
         using SharedData = SharedDataBase<TYPE, TEMPTYPE>;
 
-        std::valarray<double> xmin = {0, 0, 0, 0}, xmax = {M_PI, M_PI, 2*M_PI, rend}; // Limits on theta1, theta2, phi, r
+        std::valarray<double> xmin, xmax;
+        switch (order)
+        {
+        case 2:
+            xmin = { 0, 0, 0, rstart }, xmax = { M_PI, M_PI, 2 * M_PI, rend }; // Limits on theta1, theta2, phi, r
+            break;
+        case 3:
+            xmin = { rstart, rstart, -1 }, xmax = { rend, rend, 1 }; // Limits on r12, r13, eta
+            break;
+        default:
+            break;
+        }
         SharedData shared(Tstar, 0.0, mol1, mol2, potcls, xmin, xmax);
         
-        int ndim = 1;
+        int ndim = 1; // If T is a floating point number (default)
         std::valarray<double> val(0.0, 4), err(0.0, 4);
         if constexpr (std::is_same<decltype(shared.Tstar), std::complex<double>>::value) {
             ndim = 2;
@@ -347,6 +417,7 @@ public:
         else if constexpr (std::is_same<decltype(shared.Tstar), MultiComplex<double>>::value) {
             ndim = static_cast<int>(shared.Tstar.get_coef().size());
             val.resize(ndim); err.resize(ndim);
+            val.apply([](double x) {return 0.0; });
         }
 
 #if !defined(NO_CUBA)
@@ -407,24 +478,50 @@ public:
 #else
         // Use cubature to do the integration...
 
-        // The integrand function
-        //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
-        auto cubature_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-            auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
-            double theta1 = x[0], theta2 = x[1], phi = x[2], r = x[3];
-            shared.rstar = r;
-            shared.orient_integrand(theta1, theta2, phi, fval);
-            return 0; // success
-        };
-        
-        auto naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
-        hcubature(ndim, cubature_integrand, &shared, naxes, &(xmin[0]), &(xmax[0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
-        
-        // The quadruple integral needs to be divided by 8*pi, but the leading term in the
-        // expression for B_2 is -2\pi, so factor becomes -1/4, or -0.25
-        for (auto i = 0; i < val.size(); ++i) {
-            val[i] = -0.25 * val[i];
-            err[i] = -0.25 * err[i];
+        switch (order) {
+        case 2:
+        {
+            // The integrand function
+            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
+            auto cubature_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                double theta1 = x[0], theta2 = x[1], phi = x[2], r = x[3];
+                shared.rstar = r;
+                shared.orient_integrand(theta1, theta2, phi, fval);
+                return 0; // success
+            };
+
+            auto naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
+            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmin[0]), &(xmax[0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
+
+            // The quadruple integral needs to be divided by 8*pi, but the leading term in the
+            // expression for B_2 is -2\pi, so factor becomes -1/4, or -0.25
+            for (auto i = 0; i < val.size(); ++i) {
+                val[i] = -0.25 * val[i]; err[i] = -0.25 * err[i];
+            }
+            break;
+        }
+        case 3:
+        {
+            // The integrand function
+            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
+            auto cubature_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                shared.atomic_B3_integrand(x[0], x[1], x[2], fval);
+                return 0; // success
+            };
+
+            auto naxes = 3; // How many dimensions the integral is taken over (r12, r13, eta)
+            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmin[0]), &(xmax[0]), 1000000, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
+
+            for (auto i = 0; i < val.size(); ++i) {
+                val[i] = 8*M_PI*M_PI/3 * val[i]; 
+                err[i] = 8*M_PI*M_PI/3 * err[i];
+            }
+            break;
+        }
+        default:
+            throw -1;
         }
 #endif
         if constexpr (std::is_same<decltype(Tstar), double>::value) {

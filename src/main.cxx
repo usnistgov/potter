@@ -13,13 +13,20 @@ void check_LJ() {
     std::function<double(double)> f([](double r) {
         double rn6 = 1/(r*r*r*r*r*r); return 4.0*(rn6*rn6 - rn6); }
     );
-    i.get_evaluator().connect_potentials(f, 1);
+    i.get_evaluator().connect_potentials(f, 1/* number of sites */);
+    // B_2^*
     for (auto Tstar = 1.0; Tstar < 10; Tstar *= 2) {
         double h = 1e-100;
-        auto radval = i.radial_integrate(std::complex<double>(Tstar, h), 0.01, 1000, 10000);
+        auto radval = i.radial_integrate_B2(std::complex<double>(Tstar, h), 0.01, 1000, 10000);
         int order = 2, Nderivs = 2;
         auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.01, 1000, i.mol1, i.mol2);
         std::cout << Tstar << "," << radval << "," << val["B"] << "," << val["dBdT"] << "," << val["d2BdT2"] << "," << Bstar_Mie(Tstar, 12, 6) << std::endl;
+    }
+    auto SQUARE = [](double x) { return x*x; };
+    for (auto Tstar = 1.0; Tstar < 10; Tstar *= 2) {
+        int order = 3, Nderivs = 2;
+        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.01, 1000, i.mol1, i.mol2);
+        std::cout << Tstar << "," << val["B"] << std::endl;
     }
 }
 
@@ -97,7 +104,7 @@ void LJChain(int N, const std::string &filename) {
 int main() {
     check_LJ();
     //check_N2("results_N2.txt");
-    for (auto N = 2; N < 20; N *= 2){
-       LJChain(N, "results" + std::to_string(N) + ".txt");
-   }
+   // for (auto N = 2; N < 20; N *= 2){
+   //    LJChain(N, "results" + std::to_string(N) + ".txt");
+   //}
 }
