@@ -417,7 +417,8 @@ public:
         else if constexpr (std::is_same<decltype(shared.Tstar), MultiComplex<double>>::value) {
             ndim = static_cast<int>(shared.Tstar.get_coef().size());
             val.resize(ndim); err.resize(ndim);
-            val.apply([](double x) {return 0.0; });
+            val = val.apply([](const double x) {return 0.0; });
+            err = err.apply([](const double x) {return 0.0; });
         }
 
 #if !defined(NO_CUBA)

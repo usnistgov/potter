@@ -22,11 +22,12 @@ void check_LJ() {
         auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.01, 1000, i.mol1, i.mol2);
         std::cout << Tstar << "," << radval << "," << val["B"] << "," << val["dBdT"] << "," << val["d2BdT2"] << "," << Bstar_Mie(Tstar, 12, 6) << std::endl;
     }
+    // B_3^*=B_3/sigma^6
     auto SQUARE = [](double x) { return x*x; };
     for (auto Tstar = 1.0; Tstar < 10; Tstar *= 2) {
         int order = 3, Nderivs = 2;
-        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.01, 1000, i.mol1, i.mol2);
-        std::cout << Tstar << "," << val["B"] << std::endl;
+        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.00001, 10000, i.mol1, i.mol2);
+        std::cout << Tstar << "," << val["B"] << "+-" << val["error(B)"] << std::endl;
     }
 }
 
