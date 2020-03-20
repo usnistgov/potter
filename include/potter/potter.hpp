@@ -28,6 +28,9 @@ std::mutex mtx;  // mutex for cout
 constexpr auto M_PI = 3.14159265358979323846;
 #endif
 
+/* 
+Trapezoidal integration -- the workhorse numerical integration routine
+*/
 template<typename TYPEX, typename TYPEY>
 TYPEY trapz(const Eigen::Array<TYPEX, Eigen::Dynamic, 1>& x, 
            const Eigen::Array<TYPEY, Eigen::Dynamic, 1>& y) {
@@ -38,6 +41,9 @@ TYPEY trapz(const Eigen::Array<TYPEX, Eigen::Dynamic, 1>& x,
     }
     return out;
 }
+/*
+Simpson's integration rule
+*/
 template<typename TYPEX, typename TYPEY>
 TYPEY simps(const Eigen::Array<TYPEX, Eigen::Dynamic, 1>& x, 
            const Eigen::Array<TYPEY, Eigen::Dynamic, 1>& f) {
@@ -315,14 +321,16 @@ public:
         hcubature(ndim, f_integrand, &shared, 3, &(shared.xmin[0]), &(shared.xmax[0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
         return val[0]/(8*M_PI);
     }
+
     /**
     Do the calculations for one temperature
 
+    @param order The order of the virial coefficient (2=B_2, 3=B_3, etc.)
     @returns Tuple of (value, estimated error in value)
     @note The return numerical type maybe be one of double, std::complex<double> or MultiComplex<double>
     */
     template <typename TEMPTYPE>
-    std::tuple<TEMPTYPE,TEMPTYPE> one_temperature(TEMPTYPE Tstar, TYPE rstart, TYPE rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2) const 
+    std::tuple<TEMPTYPE,TEMPTYPE> one_temperature(int order, TEMPTYPE Tstar, TYPE rstart, TYPE rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2) const 
     {
         
         // Some local typedefs to avoid typing
@@ -433,10 +441,10 @@ public:
         }
     }
     
-    std::map<std::string, double> B_and_derivs(int Nderivs, double T, double rstart, double rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2){
+    std::map<std::string, double> B_and_derivs(int order, int Nderivs, double T, double rstart, double rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2){
         
         if (Nderivs == 0) {
-            auto [val,esterr] = this->one_temperature(T, rstart, rend, mol1, mol2);
+            auto [val,esterr] = this->one_temperature(order, T, rstart, rend, mol1, mol2);
             return {
                 {"T", T},
                 {"B", val},
@@ -445,7 +453,7 @@ public:
         }
         if (Nderivs == 1) {
             double h = 1e-100;
-            auto [val,esterr] = this->one_temperature(std::complex<double>(T,h), rstart, rend, mol1, mol2);
+            auto [val,esterr] = this->one_temperature(order, std::complex<double>(T,h), rstart, rend, mol1, mol2);
             return {
                 {"T", T},
                 {"B", val.real()},
@@ -456,8 +464,8 @@ public:
         }
         else {
             std::function<std::tuple<MultiComplex<double>,MultiComplex<double>>(const MultiComplex<double>&)> f(
-                [this, rstart, rend, mol1, mol2](const MultiComplex<double>& T) {
-                    return this->one_temperature(T, rstart, rend, mol1, mol2);
+                [this, order, rstart, rend, mol1, mol2](const MultiComplex<double>& T) {
+                    return this->one_temperature(order, T, rstart, rend, mol1, mol2);
                 });
             bool and_val = true;
             auto [val,esterr] = diff_mcx1(f, T, Nderivs, and_val);
@@ -472,7 +480,7 @@ public:
             };
         }
     }
-    auto parallel_B_and_derivs(int Nthreads, int Nderivs, std::vector<double> Tvec, double rstart, double rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2)
+    auto parallel_B_and_derivs(int order, int Nthreads, int Nderivs, std::vector<double> Tvec, double rstart, double rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2)
     {
         init_thread_pool(Nthreads);
         std::vector<double> times(Tvec.size());
@@ -481,9 +489,9 @@ public:
         for (auto T : Tvec) {
             auto& result = outputs[i];
             auto& time = times[i];
-            std::function<void(void)> one_Temp = [this, Nderivs, T, rstart, rend, mol1, mol2, &result, &time]() {
+            std::function<void(void)> one_Temp = [this, order, Nderivs, T, rstart, rend, mol1, mol2, &result, &time]() {
                 auto startTime = std::chrono::high_resolution_clock::now();
-                result = this->B_and_derivs(Nderivs, T, rstart, rend, mol1, mol2);
+                result = this->B_and_derivs(order, Nderivs, T, rstart, rend, mol1, mol2);
                 auto endTime = std::chrono::high_resolution_clock::now();
                 time = std::chrono::duration<double>(endTime - startTime).count(); 
                 {

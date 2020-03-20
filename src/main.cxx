@@ -17,7 +17,8 @@ void check_LJ() {
     for (auto Tstar = 1.0; Tstar < 10; Tstar *= 2) {
         double h = 1e-100;
         auto radval = i.radial_integrate(std::complex<double>(Tstar, h), 0.01, 1000, 10000);
-        auto val = i.B_and_derivs(2, Tstar, 0.01, 1000, i.mol1, i.mol2);
+        int order = 2, Nderivs = 2;
+        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.01, 1000, i.mol1, i.mol2);
         std::cout << Tstar << "," << radval << "," << val["B"] << "," << val["dBdT"] << "," << val["d2BdT2"] << "," << Bstar_Mie(Tstar, 12, 6) << std::endl;
     }
 }
@@ -34,7 +35,7 @@ void check_N2(const std::string &filename) {
         1400, 1450, 1500, 1600, 1700, 1800, 1900, 2000, 2200, 2400, 2600, 2800, 3000 };
     std::ofstream ofs(filename);
     ofs << "T/K B/cm^3/mol dB^*/dT^* d2B^*/dT^*2 elapsed(s)" << std::endl;
-    auto results = integr.parallel_B_and_derivs(Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
+    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
     for (auto val : results) {
         auto B = (val["B"] + 2*M_PI/3*8) * 6.02214086e23 / 1e24;
         auto dBdT = val["dBdT"] * 6.02214086e23 / 1e24;
@@ -57,7 +58,7 @@ void LJChain(int N, const std::string &filename) {
     auto ETvec = exp(Eigen::ArrayXd::LinSpaced(Ntemps, log(Tmin), log(Tmax)));
     std::vector<double> Tvec(ETvec.size()); for (auto i = 0; i < ETvec.size(); i += 1) { Tvec[i] = ETvec[i]; }
     double rmin = 0.0000001;
-    auto results = i.parallel_B_and_derivs(Nthreads, Nderiv, Tvec, rmin, 200, i.mol1, i.mol2);
+    auto results = i.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, rmin, 200, i.mol1, i.mol2);
     for (auto val : results) {
         auto B = val["B"]+2*M_PI/3*pow(rmin,3);
         auto dBdT = val["dBdT"];
