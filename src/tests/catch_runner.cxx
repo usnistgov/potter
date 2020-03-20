@@ -54,7 +54,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
         auto B3 = val["B"];
         auto B3err_potter = val["error(B)"];
 
-        auto B3_SK = B3_over_b2[k]*pow(2*M_PI/3, 2);
+        auto B3_SK = B3_over_b2[k] * pow(2*M_PI/3, 2);
         auto B3err_SK = standarderr[k] * pow(2*M_PI/3, 2);
 
         CHECK(std::abs(B3-B3_SK) < B3err_SK*2);
