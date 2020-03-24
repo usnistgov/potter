@@ -529,7 +529,7 @@ public:
         
         int ndim = 1; // If T is a floating point number (default)
         std::valarray<double> val(0.0, 4), err(0.0, 4);
-		std::valarray<double> val_1(0.0, 4), val_2(0.0, 4), val_3(0.0, 4), err_1(0.0, 4), err_2(0.0, 4), err_3(0.0, 4);
+        std::valarray<double> val_1(0.0, 4), val_2(0.0, 4), val_3(0.0, 4), err_1(0.0, 4), err_2(0.0, 4), err_3(0.0, 4);
         if constexpr (std::is_same<decltype(shared.Tstar), std::complex<double>>::value) {
             ndim = 2;
         }
