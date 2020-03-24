@@ -292,6 +292,118 @@ public:
             }
         }
     }
+
+
+	/*
+	Given the separations and angles, calculate the integrand for B4_1 for a spherically-symmetric potential
+	for an atomic fluid
+	*/
+	void atomic_B4_1_integrand(const double r14, const double r13, const double gama_angle, const double r12, const double eta_angle, double* fval)
+	{
+		// Get the potential function V(r) that we should use
+		auto &pot = this->evaltr.get_potential(0, 0);
+		TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
+		auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r) / Tstar); };
+		auto SQUARE = [](double x) { return x * x; };
+		auto sq_r12 = SQUARE(r12);
+		auto sq_r13 = SQUARE(r13);
+		auto sq_r14 = SQUARE(r14);
+		auto rangle_12_13 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*eta_angle);
+		auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gama_angle);
+
+		auto a = sq_r12 * f(r12)*sq_r13*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14);
+
+		if constexpr (std::is_same<decltype(Tstar), double>::value) {
+			// If T is double (real)
+			fval[0] = a;
+		}
+		else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+			// If T is a complex number (perhaps for complex step derivatives)
+			fval[0] = a.real();
+			fval[1] = a.imag();
+		}
+		else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+			// If T is a multicomplex number
+			auto& c = a.get_coef();
+			for (auto i = 0; i < c.size(); ++i) {
+				fval[i] = c[i];
+			}
+		}
+	}
+
+	/*
+Given the separations and angles, calculate the integrand for B4_2 for a spherically-symmetric potential
+for an atomic fluid
+*/
+	void atomic_B4_2_integrand(const double eta_angle, const double r12, const double r13, const double gama_angle, const double r14, double* fval)
+	{
+		// Get the potential function V(r) that we should use
+		auto &pot = this->evaltr.get_potential(0, 0);
+		TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
+		auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r) / Tstar); };
+		auto SQUARE = [](double x) { return x * x; };
+		auto sq_r12 = SQUARE(r12);
+		auto sq_r13 = SQUARE(r13);
+		auto sq_r14 = SQUARE(r14);
+		auto rangle_12_13 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*eta_angle);
+		auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gama_angle);
+
+		auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14);
+
+		if constexpr (std::is_same<decltype(Tstar), double>::value) {
+			// If T is double (real)
+			fval[0] = a;
+		}
+		else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+			// If T is a complex number (perhaps for complex step derivatives)
+			fval[0] = a.real();
+			fval[1] = a.imag();
+		}
+		else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+			// If T is a multicomplex number
+			auto& c = a.get_coef();
+			for (auto i = 0; i < c.size(); ++i) {
+				fval[i] = c[i];
+			}
+		}
+	}
+
+	/*
+Given the separations and angles, calculate the integrand for B4_3 for a spherically-symmetric potential
+for an atomic fluid
+*/
+	void atomic_B4_3_integrand(const double eta_angle, const double zeta_angle, const double gama_angle, const double r12, const double r13, const double r14, double* fval)
+	{
+		// Get the potential function V(r) that we should use
+		auto &pot = this->evaltr.get_potential(0, 0);
+		TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
+		auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r) / Tstar); };
+		auto SQUARE = [](double x) { return x * x; };
+		auto sq_r12 = SQUARE(r12);
+		auto sq_r13 = SQUARE(r13);
+		auto sq_r14 = SQUARE(r14);
+		auto rangle_12_13 = sqrt(sq_r12 + sq_r14 - 2 * r12*r14*eta_angle);
+		auto rangle_13_14 = sqrt(sq_r13 + sq_r14 - 2 * r13*r14*gama_angle);
+		auto rangle_12_14 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*(eta_angle * gama_angle + sqrt(1.0 - SQUARE(eta_angle))*sqrt(1.0 - SQUARE(gama_angle))*cos(zeta_angle)));
+		auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14)*f(rangle_12_14);
+
+		if constexpr (std::is_same<decltype(Tstar), double>::value) {
+			// If T is double (real)
+			fval[0] = a;
+		}
+		else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+			// If T is a complex number (perhaps for complex step derivatives)
+			fval[0] = a.real();
+			fval[1] = a.imag();
+		}
+		else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+			// If T is a multicomplex number
+			auto& c = a.get_coef();
+			for (auto i = 0; i < c.size(); ++i) {
+				fval[i] = c[i];
+			}
+		}
+	}
 };
 
 template<typename TYPE>
@@ -396,6 +508,7 @@ public:
         using SharedData = SharedDataBase<TYPE, TEMPTYPE>;
 
         std::valarray<double> xmin, xmax;
+		std::valarray<double> xmin_1, xmax_1, xmin_2, xmax_2, xmin_3, xmax_3;
         switch (order)
         {
         case 2:
@@ -404,6 +517,11 @@ public:
         case 3:
             xmin = { rstart, rstart, -1 }, xmax = { rend, rend, 1 }; // Limits on r12, r13, eta
             break;
+		case 4:
+			xmin_1 = { rstart, rstart, -1 , rstart, -1 }, xmax_1 = { rend, rend, 1 , rend, 1 }; // Limits on r14, r13, gama, r12, eta
+			xmin_2 = { -1, rstart, rstart, -1 , rstart }, xmax_2 = { 1, rend, rend, 1 , rend }; // Limits on  eta, r12, r13, eta, r14
+			xmin_3 = { -1,  rstart, -1 , rstart, rstart , rstart }, xmax_3 = { 1, 2 * M_PI, 1, rend, rend , rend }; // Limits on  eta,zeta,gama, r12, r13, r14
+			
         default:
             break;
         }
@@ -521,6 +639,52 @@ public:
             }
             break;
         }
+		case 4:
+		{
+			// Fourth virial coefficient: three parts B_4_1,B_4_2,B_4_3
+			// The integrand functions
+			//typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
+			auto cubature_integrand_1 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+				auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+				shared.atomic_B4_1_integrand(x[0], x[1], x[2], x[3], x[4], fval);
+				return 0; // success
+			};
+
+			auto cubature_integrand_2 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+				auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+				shared.atomic_B4_2_integrand(x[0], x[1], x[2], x[3], x[4], fval);
+				return 0; // success
+			};
+
+			auto cubature_integrand_3 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+				auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+				shared.atomic_B4_3_integrand(x[0], x[1], x[2], x[3], x[4], x[5], fval);
+				return 0; // success
+			};
+
+
+			// prefactors for each contribution 
+			std::valarray<double> pre_factors = { -3.0*(27.0 / 4.0) , 3.0*(27.0 / 2.0) ,  -27.0 / (8.0*M_PI) };
+
+			auto naxes = 5; // How many dimensions the integral is taken over (r14, r13, gama, r12, eta)
+			hcubature(ndim, cubature_integrand_1, &shared, naxes, &(xmin_1[0]), &(xmax_1[0]), 1E8, 0, 1e-4, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
+			hcubature(ndim, cubature_integrand_2, &shared, naxes, &(xmin_2[0]), &(xmax_2[0]), 1E8, 0, 1e-4, ERROR_INDIVIDUAL, &(val[1]), &(err[1]));
+
+			naxes = 6;
+			hcubature(ndim, cubature_integrand_3, &shared, naxes, &(xmin_3[0]), &(xmax_3[0]), 1E8, 0, 1e-4, ERROR_INDIVIDUAL, &(val[2]), &(err[2]));
+
+
+			for (auto i = 0; i < val.size(); ++i) {
+				val[i] = pre_factors[i] * val[i];
+				err[i] = pre_factors[i] * err[i];
+			}
+
+			val[0] = val[0] + val[1] + val[2];
+			val[1] = 0; val[2] = 0;
+			break;
+
+
+		}
         default:
             throw -1;
         }
