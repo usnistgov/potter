@@ -517,11 +517,10 @@ public:
         case 3:
             xmin = { rstart, rstart, -1 }, xmax = { rend, rend, 1 }; // Limits on r12, r13, eta
             break;
-		case 4:
-			xmin_1 = { rstart, rstart, -1 , rstart, -1 }, xmax_1 = { rend, rend, 1 , rend, 1 }; // Limits on r14, r13, gamma, r12, eta
-			xmin_2 = { -1, rstart, rstart, -1 , rstart }, xmax_2 = { 1, rend, rend, 1 , rend }; // Limits on  eta, r12, r13, eta, r14
-			xmin_3 = { -1,  rstart, -1 , rstart, rstart , rstart }, xmax_3 = { 1, 2 * M_PI, 1, rend, rend , rend }; // Limits on  eta,zeta,gamma, r12, r13, r14
-			
+        case 4:
+            xmin_1 = { rstart, rstart, -1 , rstart, -1 }, xmax_1 = { rend, rend, 1 , rend, 1 }; // Limits on r14, r13, gamma, r12, eta
+            xmin_2 = { -1, rstart, rstart, -1 , rstart }, xmax_2 = { 1, rend, rend, 1 , rend }; // Limits on  eta, r12, r13, eta, r14
+            xmin_3 = { -1,  rstart, -1 , rstart, rstart , rstart }, xmax_3 = { 1, 2 * M_PI, 1, rend, rend , rend }; // Limits on  eta,zeta,gamma, r12, r13, r14	
         default:
             break;
         }
@@ -691,8 +690,6 @@ public:
 			//err = (err_1 + err_2 + err_3) / 3;
 
 			break;
-
-
 		}
         default:
             throw -1;
