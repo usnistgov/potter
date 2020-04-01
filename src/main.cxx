@@ -6,6 +6,80 @@
 #include <fstream>
 #include <cmath>
 
+double gr = (sqrt(5) + 1) / 2;
+
+auto gss(std::function<double(double)> f, double a, double b, const double tol = 1e-5) {
+    /*
+    Golden section search
+    Translation of https://en.wikipedia.org/wiki/Golden-section_search#Algorithm
+    Text is available under the Creative Commons Attribution-ShareAlike License
+    */
+    auto c = b - (b - a) / gr;
+    auto d = a + (b - a) / gr;
+    while (abs(c - d) > tol) {
+        if (f(c) < f(d)) {
+            b = d;
+        }
+        else {
+            a = c;
+        }
+        // We recompute both c and d here to avoid loss of precision which may lead to incorrect results or infinite loop
+        c = b - (b - a) / gr;
+        d = a + (b - a) / gr;
+    }
+    return std::make_tuple((b + a) / 2, f((b+a)/2));
+}
+
+void check_EXP6(int order, double alpha, const std::string &filename) {
+    std::vector<std::vector<double>> coords0 = { {0,0,0} };
+    Molecule<double> m0(coords0), m1(coords0);
+    Integrator<double> i(m0, m1);
+
+    std::ofstream ofs(filename);
+
+    // Calculate the radius where the potential is at its maximal value
+    // by golden section minimization
+    auto [rstarpotmax, valpotmax] = gss([alpha](double rstar) {
+        double pot = 1 / (1 - 6 / alpha) * (6 / alpha * exp(alpha * (1 - rstar)) - pow(rstar, -6));;
+        return -pot;
+        }, 0.1, 1, 1e-10);
+    valpotmax *= -1;
+
+    // Connect the potential
+    std::function<double(double)> f([rstarpotmax, valpotmax, alpha](double rstar) {
+        return (rstar >= rstarpotmax) ? 1/(1-6/alpha) * (6/alpha*exp(alpha*(1-rstar))-pow(rstar, -6)) : valpotmax;
+        }
+    );
+    i.get_evaluator().connect_potentials(f, 1/* number of sites */);
+    
+    // B_2^*=B_2/r_m^3
+    std::cout << "T,B,errest(B),neff" << std::endl;
+    ofs << "T,B,errest(B),neff" << std::endl;
+    for (auto Tstar = 0.1; Tstar < 1e7; Tstar *= 1.2) {
+        int Nderivs = 2;
+        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.00001, 10000, i.mol1, i.mol2);
+
+        auto B = val["B"];
+        auto dBdT = val["dBdT"];
+        auto d2BdT2 = (val.count("d2BdT2") > 0) ? val["d2BdT2"] : -1e30;
+        auto elapsed = val["elapsed / s"];
+
+        // Defining the term Q_i \equiv (1/T)^i*d^iB_2/d(1/T)^i...
+        // The term 1/T is the analog of tau=Tr/T in equation of state land; the 
+        // numerator cancels in the derivative
+        auto Q0 = B;
+        auto Q1 = -Tstar * dBdT;
+        auto Q2 = Tstar * Tstar * d2BdT2 + 2 * Tstar * dBdT;
+        auto neff = -3 * (Q0 - Q1) / Q2;
+
+        std::stringstream out;
+        out << Tstar << "," << val["B"] << "," << val["error(B)"] << "," << neff << std::endl;
+        auto sout = out.str();
+        std::cout << sout;
+        ofs << sout;
+    }
+}
+
 void check_LJ() {
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
@@ -126,7 +200,9 @@ void LJChain(int N, const std::string &filename) {
 }
 
 int main() {
-    check_LJ();
+    check_EXP6(2, 13, "B2_alpha13_EXP6.csv");
+    check_EXP6(3, 13, "B3_alpha13_EXP6.csv");
+    //check_LJ();
     //check_N2("results_N2.txt");
    // for (auto N = 2; N < 20; N *= 2){
    //    LJChain(N, "results" + std::to_string(N) + ".txt");
