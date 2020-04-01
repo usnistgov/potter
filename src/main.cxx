@@ -31,6 +31,29 @@ void check_LJ() {
     }
 }
 
+void Bntable(int order, double Tmin, double Tmax, double NT, const std::string &filename) {
+    std::vector<std::vector<double>> coords0 = { {0,0,0} };
+    Molecule<double> m0(coords0), m1(coords0);
+    Integrator<double> i(m0, m1);
+    std::function<double(double)> f([](double r) { double rn6 = 1/(r*r*r*r*r*r); return 4.0*(rn6*rn6 - rn6); });
+    i.get_evaluator().connect_potentials(f, 1/* number of sites */);
+    // B_3^*=B_3/sigma^6
+    auto SQUARE = [](double x) { return x * x; };
+    std::vector<double> Tvec; double dT = (log(Tmax)-log(Tmin))/(NT-1); for (auto i = 0; i < NT; ++i){ Tvec.push_back(exp(log(Tmin)+dT*i)); }
+    std::ofstream ofs(filename);
+    ofs << "T^* B^* dB^*/dT^* d2B^*/dT^*2 elapsed(s)" << std::endl;
+    auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, 2 /* Nderiv */, Tvec, 0.02, 1000, i.mol1, i.mol2); // radius in A, B in A^3/molecule
+    for (auto val : results) {
+        auto B = val["B"];
+        auto dBdT = val["dBdT"];
+        auto d2BdT2 = val["d2BdT2"];
+        auto T = val["T"];
+        auto elapsed = val["elapsed"];
+        std::cout << T << " " << B << " " << dBdT << " " << d2BdT2 << " " << elapsed << std::endl;
+        ofs << T << " " << B << " " << dBdT << " " << d2BdT2 << " " << elapsed << std::endl;
+    }
+}
+
 void check_N2(const std::string &filename) {
     auto integr = get_nitrogen();
     auto Nthreads = 1;
