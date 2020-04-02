@@ -335,7 +335,7 @@ public:
 Given the separations and angles, calculate the integrand for B4_2 for a spherically-symmetric potential
 for an atomic fluid
 */
-	void atomic_B4_2_integrand(const double eta_angle, const double r12, const double r13, const double gama_angle, const double r14, double* fval)
+	void atomic_B4_2_integrand(const double eta_angle, const double r12, const double r13, const double gamma_angle, const double r14, double* fval)
 	{
 		// Get the potential function V(r) that we should use
 		auto &pot = this->evaltr.get_potential(0, 0);
@@ -346,7 +346,7 @@ for an atomic fluid
 		auto sq_r13 = SQUARE(r13);
 		auto sq_r14 = SQUARE(r14);
 		auto rangle_12_13 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*eta_angle);
-		auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gama_angle);
+		auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gamma_angle);
 
 		auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14);
 
@@ -372,7 +372,7 @@ for an atomic fluid
 Given the separations and angles, calculate the integrand for B4_3 for a spherically-symmetric potential
 for an atomic fluid
 */
-	void atomic_B4_3_integrand(const double eta_angle, const double zeta_angle, const double gama_angle, const double r12, const double r13, const double r14, double* fval)
+	void atomic_B4_3_integrand(const double eta_angle, const double zeta_angle, const double gamma_angle, const double r12, const double r13, const double r14, double* fval)
 	{
 		// Get the potential function V(r) that we should use
 		auto &pot = this->evaltr.get_potential(0, 0);
@@ -383,8 +383,8 @@ for an atomic fluid
 		auto sq_r13 = SQUARE(r13);
 		auto sq_r14 = SQUARE(r14);
 		auto rangle_12_13 = sqrt(sq_r12 + sq_r14 - 2 * r12*r14*eta_angle);
-		auto rangle_13_14 = sqrt(sq_r13 + sq_r14 - 2 * r13*r14*gama_angle);
-		auto rangle_12_14 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*(eta_angle * gama_angle + sqrt(1.0 - SQUARE(eta_angle))*sqrt(1.0 - SQUARE(gama_angle))*cos(zeta_angle)));
+		auto rangle_13_14 = sqrt(sq_r13 + sq_r14 - 2 * r13*r14*gamma_angle);
+		auto rangle_12_14 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*(eta_angle * gamma_angle + sqrt(1.0 - SQUARE(eta_angle))*sqrt(1.0 - SQUARE(gamma_angle))*cos(zeta_angle)));
 		auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14)*f(rangle_12_14);
 
 		if constexpr (std::is_same<decltype(Tstar), double>::value) {
