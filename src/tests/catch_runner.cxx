@@ -80,8 +80,8 @@ TEST_CASE("Check B_4  values against Singh&Kofke values", "[B_4]") {
 	for (auto k = 0; k < Tstar.size(); ++k) {
 		int order = 4, Nderivs = 0;
 		auto val = i.B_and_derivs(order, Nderivs, Tstar[k], 1e-5, 400, i.mol1, i.mol2);
-		auto B4 = val["D"];
-		auto B4err_potter = val["error(D)"];
+		auto B4 = val["B"];
+		auto B4err_potter = val["error(B)"];
 
 		auto B4_SK = B4_over_b3[k] * pow(2 * M_PI / 3, 2);
 		auto B4err_SK = standarderr[k] * pow(2 * M_PI / 3, 2);
