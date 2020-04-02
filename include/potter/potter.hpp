@@ -687,7 +687,7 @@ public:
 
 
 			val = val_1 + val_2 + val_3;
-			//err = (err_1 + err_2 + err_3) / 3;
+			err = std::abs(err_1) + std::abs(err_2) + std::abs(err_3);
 
 			break;
 		}
