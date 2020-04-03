@@ -80,12 +80,12 @@ void check_N2(const std::string &filename) {
 void LJChain(int N, const std::string &filename) {
     auto i = get_rigidLJChain(N, 1.0);
     std::ofstream ofs(filename);
-    ofs << "T^*,N,B^*,dB^*/dT^*,d2B^*/dT^*2,neff,elapsed / s" << std::endl;
-    auto Nthreads = 20;
+    ofs << "T^*,N,B^*,dB^*/dT^*,d2B^*/dT^*2,neff,esterr(neff),elapsed / s" << std::endl;
+    auto Nthreads = 6; // Could be more depending on machine...
     auto Nderiv = 2;
     using arr = Eigen::Array<double, Eigen::Dynamic, 1>;
     auto Tmin = 1.0, Tmax = 100000.0;
-    auto Ntemps = 20;
+    auto Ntemps = 200;
     auto ETvec = exp(Eigen::ArrayXd::LinSpaced(Ntemps, log(Tmin), log(Tmax)));
     std::vector<double> Tvec(ETvec.size()); for (auto i = 0; i < ETvec.size(); i += 1) { Tvec[i] = ETvec[i]; }
     double rmin = 0.0000001;
@@ -96,26 +96,27 @@ void LJChain(int N, const std::string &filename) {
         auto d2BdT2 = (val.count("d2BdT2") > 0) ? val["d2BdT2"] : -1e30;
         auto Tstar = val["T"];
         auto elapsed = val["elapsed / s"];
-
-        // Defining the term Q_i \equiv (1/T)^i*d^iB_2/d(1/T)^i...
-        // The term 1/T is the analog of tau=Tr/T in equation of state land; the 
-        // numerator cancels in the derivative
-        auto Q0 = B;
-        auto Q1 = -Tstar*dBdT;
-        auto Q2 = Tstar*Tstar*d2BdT2 + 2*Tstar*dBdT;
-        auto neff = -3*(Q0-Q1)/Q2;
+        auto neff = -3*(B+Tstar*dBdT)/(Tstar*Tstar*d2BdT2 + 2*Tstar*dBdT);
 
         // Estimate the error in neff from propagation from estimated error in 
         // each of the virial coefficient terms
         auto sq = [](double x){ return x*x; };
-        auto err_Q0 = val["error(B)"];
-        auto err_Q1 = val["error(dBdT)"]*Tstar;
-        auto err_Q2 = sqrt(sq(Tstar*Tstar*val["error(d2BdT2)"]) + sq(2*Tstar*val["error(dBdT)"]));
+        auto err_B = val["error(B)"]; auto err_dBdT = val["error(dBdT)"]; auto err_d2BdT2 = val["error(d2BdT2)"];
 
-        auto dneff_dQ0 = -3/Q2;
-        auto dneff_dQ1 = 3/Q2;
-        auto dneff_dQ2 = 3*(Q0-Q1)/pow(Q2,2);
-        auto err_neff = sqrt(sq(dneff_dQ0*err_Q0) + sq(dneff_dQ1*err_Q1) + sq(dneff_dQ2*err_Q2));
+        // Partials of neff w.r.t. each term
+        /* Sympy:
+        Tstar,B,dBdT,d2BdT2 = symbols('Tstar,B,dBdT,d2BdT2')
+        neff = -3*(B+Tstar*dBdT)/(Tstar**2*d2BdT2 + 2*Tstar*dBdT)
+        print(simplify(diff(neff, B)))
+        print(simplify(diff(neff, dBdT)))
+        print(simplify(diff(neff, d2BdT2)))
+        */
+        auto dneff_dB = -3/(Tstar*(Tstar*d2BdT2 + 2*dBdT));
+        auto dneff_ddBdT = 6*B/(Tstar*sq(Tstar*d2BdT2 + 2*dBdT)) - 3*Tstar*d2BdT2/sq(Tstar*d2BdT2 + 2*dBdT);
+        auto dneff_dd2BdT2 = 3*(B + Tstar*dBdT) / sq(Tstar*d2BdT2 + 2*dBdT);
+
+        // Join into overall error estimate
+        auto err_neff = sqrt(sq(dneff_dB*err_B) + sq(dneff_ddBdT*err_dBdT) + sq(dneff_dd2BdT2*err_d2BdT2));
 
         std::stringstream out;
         out << Tstar << "," << N << "," << B << "," << dBdT << "," << d2BdT2 << "," << neff << "," << err_neff << "," << elapsed << std::endl;
@@ -126,9 +127,9 @@ void LJChain(int N, const std::string &filename) {
 }
 
 int main() {
-    check_LJ();
+    //check_LJ();
     //check_N2("results_N2.txt");
-   // for (auto N = 2; N < 20; N *= 2){
-   //    LJChain(N, "results" + std::to_string(N) + ".txt");
-   //}
+    for (auto N = 1; N < 20; N *= 2){
+       LJChain(N, "results" + std::to_string(N) + ".csv");
+    }
 }
