@@ -12,6 +12,7 @@ Automated Tests on TravisCI: [![Build Status](https://travis-ci.org/usnistgov/po
 Brought to you by:
 
 * Ian Bell, NIST, ian.bell@nist.gov
+* Sven Pohl, Ruhr-Universitat Bochum
 
 ## License
 
