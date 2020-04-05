@@ -32,8 +32,10 @@ else()
     target_link_libraries(potter PRIVATE "cuba")
 endif()
 
-#add_executable(cuba-test "${CMAKE_CURRENT_SOURCE_DIR}/src/cuba_test.cxx")
-#target_link_libraries(cuba-test PRIVATE "cuba")
+add_executable(cuba-test "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/cuba_test.cxx")
+target_link_libraries(cuba-test PRIVATE "cuba")
+target_link_directories(cuba-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
+target_include_directories(cuba-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
 
 add_executable(catchtest "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/catch_runner.cxx")
 add_cubature(catchtest)
