@@ -4,6 +4,19 @@ project(potter)
 set(CMAKE_CXX_STANDARD 17)
 
 if (NOT MSVC)
+    message(STATUS "Untarred Cuba 4.2")
+    set(ZIPFN "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2.tar.gz")
+    set(OUTFN "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2/libcuba.a")
+    if(NOT EXISTS ${OUTFN})
+        execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xf ${ZIPFN}
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals)
+        message(STATUS "Untarred Cuba 4.2")
+        execute_process(COMMAND "./configure"
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2)
+        execute_process(COMMAND make
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2)
+        message(STATUS "Built Cuba 4.2")
+    endif()
     link_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
     include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
 else()
@@ -16,7 +29,6 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Eigen")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/cubature-master")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/ThreadPool2")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/mcx/pymcx/include")
-
 
 macro(add_cubature target)
     target_sources(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/cubature-master/pcubature.c")
@@ -32,8 +44,10 @@ else()
     target_link_libraries(potter PRIVATE "cuba")
 endif()
 
-#add_executable(cuba-test "${CMAKE_CURRENT_SOURCE_DIR}/src/cuba_test.cxx")
-#target_link_libraries(cuba-test PRIVATE "cuba")
+add_executable(cuba-test "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/cuba_test.cxx")
+target_link_libraries(cuba-test PRIVATE "cuba")
+link_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
+target_include_directories(cuba-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
 
 add_executable(catchtest "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/catch_runner.cxx")
 add_cubature(catchtest)
