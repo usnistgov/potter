@@ -6,6 +6,79 @@
 #include <fstream>
 #include <cmath>
 
+double gr = (sqrt(5) + 1) / 2;
+
+auto gss(std::function<double(double)> f, double a, double b, const double tol = 1e-5) {
+    /*
+    Golden section search
+    Translation of https://en.wikipedia.org/wiki/Golden-section_search#Algorithm
+    Text is available under the Creative Commons Attribution-ShareAlike License
+    */
+    auto c = b - (b - a) / gr;
+    auto d = a + (b - a) / gr;
+    while (abs(c - d) > tol) {
+        if (f(c) < f(d)) {
+            b = d;
+        }
+        else {
+            a = c;
+        }
+        // We recompute both c and d here to avoid loss of precision which may lead to incorrect results or infinite loop
+        c = b - (b - a) / gr;
+        d = a + (b - a) / gr;
+    }
+    return std::make_tuple((b + a) / 2, f((b+a)/2));
+}
+
+void check_EXP6(int order, double alpha, const std::string &filename) {
+    std::vector<std::vector<double>> coords0 = { {0,0,0} };
+    Molecule<double> m0(coords0), m1(coords0);
+    Integrator<double> i(m0, m1);
+
+    std::ofstream ofs(filename);
+
+    // Calculate the radius where the potential is at its maximal value
+    // by golden section minimization
+    auto [rstarpotmax, valpotmax] = gss([alpha](double rstar) {
+        double pot = 1 / (1 - 6 / alpha) * (6 / alpha * exp(alpha * (1 - rstar)) - pow(rstar, -6));;
+        return -pot;
+        }, 0.1, 1, 1e-10);
+    valpotmax *= -1;
+
+    // Connect the potential
+    std::function<double(double)> f([rstarpotmax, valpotmax, alpha](double rstar) {
+        return (rstar >= rstarpotmax) ? 1/(1-6/alpha) * (6/alpha*exp(alpha*(1-rstar))-pow(rstar, -6)) : valpotmax;
+        }
+    );
+    i.get_evaluator().connect_potentials(f, 1/* number of sites */);
+    
+    // B_2^*=B_2/r_m^3
+    // B_3^*=B_3/r_m^6
+    std::string header = "order,T,B,errest(B),dBdT,errest(dBdT),d2BdT2,errest(d2BdT),neff,elapsed / s";
+    std::cout << header << std::endl;
+    ofs << header << std::endl;
+    double Tmin = 0.1, Tmax = 1e7;
+    int NT = 200;
+    std::vector<double> Tvec; double dT = (log(Tmax) - log(Tmin)) / (NT - 1); for (auto i = 0; i < NT; ++i) { Tvec.push_back(exp(log(Tmin) + dT * i)); }
+    int Nderivs = 2;
+    auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, Nderivs, Tvec, 0.0001, 200, i.mol1, i.mol2); // radius in A, B in A^3/molecule
+    for (auto val : results) {
+
+        auto Tstar = val["T"];
+        auto B = val["B"];
+        auto dBdT = val["dBdT"];
+        auto d2BdT2 = (val.count("d2BdT2") > 0) ? val["d2BdT2"] : -1e30;
+        auto elapsed = val["elapsed / s"];
+        auto neff = -3 * (B+Tstar*dBdT) / (Tstar*Tstar*d2BdT2 + 2*Tstar*dBdT);
+
+        std::stringstream out;
+        out << order << "," << Tstar << "," << val["B"] << "," << val["error(B)"] << "," << val["dBdT"] << "," << val["error(dBdT)"] << "," << val["d2BdT2"] << "," << val["error(d2BdT2)"] << "," << neff << "," << elapsed << std::endl;
+        auto sout = out.str();
+        std::cout << sout;
+        ofs << sout;
+    }
+}
+
 void check_LJ() {
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
@@ -127,6 +200,8 @@ void LJChain(int N, const std::string &filename) {
 }
 
 int main() {
+    check_EXP6(2, 13, "B2_alpha13_EXP6.csv");
+    check_EXP6(3, 13, "B3_alpha13_EXP6.csv");
     //check_LJ();
     //check_N2("results_N2.txt");
     for (auto N = 1; N < 20; N *= 2){

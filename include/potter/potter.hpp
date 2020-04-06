@@ -219,7 +219,9 @@ public:
     SharedDataBase(TEMPTYPE Tstar, TYPE rstar,
         Molecule<TYPE> molA, Molecule<TYPE> molB, 
         const PotentialEvaluator<TYPE>& evaltr, 
-        const std::valarray<TYPE> &xmin, const std::valarray<TYPE> &xmax)
+        const std::valarray<TYPE>& xmin = {},
+        const std::valarray<TYPE>& xmax = {}
+    )
         : Tstar(Tstar), rstar(rstar), molA(molA), molB(molB), evaltr(evaltr), xmin(xmin), xmax(xmax) {};
 
     TYPE eval_pot(const Molecule<TYPE>& molA, const Molecule<TYPE>& molB) {
@@ -507,37 +509,46 @@ public:
         // Some local typedefs to avoid typing
         using SharedData = SharedDataBase<TYPE, TEMPTYPE>;
 
-        std::valarray<double> xmin, xmax;
-        std::valarray<double> xmin_1, xmax_1, xmin_2, xmax_2, xmin_3, xmax_3;
+        std::vector<std::valarray<double>> xmins, xmaxs;
         switch (order)
         {
         case 2:
-            xmin = { 0, 0, 0, rstart }, xmax = { M_PI, M_PI, 2 * M_PI, rend }; // Limits on theta1, theta2, phi, r
+            xmins = {{ 0, 0, 0, rstart }}, xmaxs = {{ M_PI, M_PI, 2 * M_PI, rend }}; // Limits on theta1, theta2, phi, r
             break;
-        case 3:
-            xmin = { rstart, rstart, -1 }, xmax = { rend, rend, 1 }; // Limits on r12, r13, eta
+        case 3:{
+            double rbreak = 1.3;
+            xmins = {{ rstart, rstart, -1 },{ rbreak, rstart, -1 } }, xmaxs = {{ rbreak, rend, 1 },{ rend, rend, 1 } }; // Limits on r12, r13, eta
             break;
+            }
         case 4:
-            xmin_1 = { rstart, rstart, -1 , rstart, -1 }, xmax_1 = { rend, rend, 1 , rend, 1 }; // Limits on r14, r13, gamma, r12, eta
-            xmin_2 = { -1, rstart, rstart, -1 , rstart }, xmax_2 = { 1, rend, rend, 1 , rend }; // Limits on  eta, r12, r13, eta, r14
-            xmin_3 = { -1,  rstart, -1 , rstart, rstart , rstart }, xmax_3 = { 1, 2 * M_PI, 1, rend, rend , rend }; // Limits on  eta,zeta,gamma, r12, r13, r14	
+            // Limits on r14, r13, gamma, r12, eta
+            // Limits on eta, r12, r13, eta, r14
+            // Limits on eta,zeta,gamma, r12, r13, r14	
+            xmins = {{rstart, rstart, -1 , rstart, -1 }, { -1, rstart, rstart, -1 , rstart }, { -1,  rstart, -1 , rstart, rstart , rstart }};
+            xmaxs = {{ rend, rend, 1 , rend, 1 }, { 1, rend, rend, 1 , rend }, { 1, 2 * M_PI, 1, rend, rend , rend }};
         default:
             break;
         }
-        SharedData shared(Tstar, 0.0, mol1, mol2, potcls, xmin, xmax);
+        SharedData shared(Tstar, 0.0, mol1, mol2, potcls);
         
         int ndim = 1; // If T is a floating point number (default)
-        std::valarray<double> val(0.0, 4), err(0.0, 4);
-        std::valarray<double> val_1(0.0, 4), val_2(0.0, 4), val_3(0.0, 4), err_1(0.0, 4), err_2(0.0, 4), err_3(0.0, 4);
+        std::valarray<double> outval, outerr;
+        std::vector<std::valarray<double >> vals(10), errs(10);
         if constexpr (std::is_same<decltype(shared.Tstar), std::complex<double>>::value) {
             ndim = 2;
         }
         else if constexpr (std::is_same<decltype(shared.Tstar), MultiComplex<double>>::value) {
             ndim = static_cast<int>(shared.Tstar.get_coef().size());
-            val.resize(ndim); err.resize(ndim);
-            val = val.apply([](const double x) {return 0.0; });
-            err = err.apply([](const double x) {return 0.0; });
         }
+        // Fill with zero
+        for (auto& val : vals) {
+            val = std::valarray<double>(0.0, ndim);
+        }
+        for (auto& err : errs) {
+            err = std::valarray<double>(0.0, ndim);
+        }
+        outval = std::valarray<double>(0.0, ndim);
+        outerr = std::valarray<double>(0.0, ndim);
 
 #if !defined(NO_CUBA)
         auto Cuba_integrand = [](const int *pndim, const cubareal x[], const int *pncomp, cubareal fval[], void *p_shared_data) {
@@ -610,14 +621,20 @@ public:
                 return 0; // success
             };
 
-            auto naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
-            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmin[0]), &(xmax[0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
+            int naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
+            auto& val = vals[0]; 
+            auto& err = errs[0];
+            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
 
             // The quadruple integral needs to be divided by 8*pi, but the leading term in the
             // expression for B_2 is -2\pi, so factor becomes -1/4, or -0.25
             for (auto i = 0; i < val.size(); ++i) {
-                val[i] = -0.25 * val[i]; err[i] = -0.25 * err[i];
+                val[i] *= -0.25; 
+                err[i] *= -0.25;
             }
+            
+            // Copy into output
+            outval = val; outerr = err;
             break;
         }
         case 3:
@@ -630,13 +647,26 @@ public:
                 return 0; // success
             };
 
-            auto naxes = 3; // How many dimensions the integral is taken over (r12, r13, eta)
-            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmin[0]), &(xmax[0]), 1000000, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
+            int naxes = 3; // How many dimensions the integral is taken over (r12, r13, eta)
+            int Ncallmax = static_cast<int>(1e6);
+            for (auto i = 0; i < xmins.size(); ++i){
+                auto& val = vals[i];
+                auto& err = errs[i];
+                auto& xmin = xmins[i];
+                auto& xmax = xmaxs[i];
+                
+                hcubature(ndim, cubature_integrand, &shared, naxes, &(xmin[0]), &(xmax[0]), Ncallmax, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
 
-            for (auto i = 0; i < val.size(); ++i) {
-                val[i] = 8*M_PI*M_PI/3 * val[i]; 
-                err[i] = 8*M_PI*M_PI/3 * err[i];
+                // Rescale with the leading factor
+                for (auto i = 0; i < val.size(); ++i) {
+                    val[i] *= 8*M_PI*M_PI/3; 
+                    err[i] *= 8*M_PI*M_PI/3;
+                }
+
+                // Copy into output
+                outval += val; outerr += err;
             }
+            
             break;
         }
 		case 4:
@@ -662,32 +692,29 @@ public:
 				return 0; // success
 			};
 
-
 			// prefactors for each contribution 
 			std::valarray<double> pre_factors = { -3.0*(27.0 / 4.0) , 3.0*(27.0 / 2.0) ,  -27.0 / (8.0*M_PI) };
 
-			auto naxes = 5; // How many dimensions the integral is taken over (r14, r13, gamma, r12, eta)
-			hcubature(ndim, cubature_integrand_1, &shared, naxes, &(xmin_1[0]), &(xmax_1[0]), 1E8, 0, 1e-4, ERROR_INDIVIDUAL, &(val_1[0]), &(err_1[0]));
-			hcubature(ndim, cubature_integrand_2, &shared, naxes, &(xmin_2[0]), &(xmax_2[0]), 1E8, 0, 1e-4, ERROR_INDIVIDUAL, &(val_2[0]), &(err_2[0]));
+			int naxes = 5; // How many dimensions the integral is taken over (r14, r13, gamma, r12, eta)
+            int Nstepmax = static_cast<int>(1e8);
+			hcubature(ndim, cubature_integrand_1, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), Nstepmax, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
+			hcubature(ndim, cubature_integrand_2, &shared, naxes, &(xmins[1][0]), &(xmaxs[1][0]), Nstepmax, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[1][0]), &(errs[1][0]));
 
 			naxes = 6;
-			hcubature(ndim, cubature_integrand_3, &shared, naxes, &(xmin_3[0]), &(xmax_3[0]), 1E8, 0, 1e-4, ERROR_INDIVIDUAL, &(val_3[0]), &(err_3[0]));
+			hcubature(ndim, cubature_integrand_3, &shared, naxes, &(xmins[2][0]), &(xmaxs[2][0]), Nstepmax, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[2][0]), &(errs[2][0]));
 
-
-			for (auto i = 0; i < val.size(); ++i) {
-				val_1[i] = pre_factors[0] * val_1[i];
-				err_1[i] = pre_factors[0] * err_1[i];
-
-				val_2[i] = pre_factors[1] * val_2[i];
-				err_2[i] = pre_factors[1] * err_2[i];
-
-				val_3[i] = pre_factors[2] * val_3[i];
-				err_3[i] = pre_factors[2] * err_3[i];
+			for (auto i = 0; i < vals[0].size(); ++i) {
+                for (auto& val : vals) {
+                    val[i] *= pre_factors[0];
+                }
+                for (auto& err : errs) {
+                    err[i] *= pre_factors[0];
+                }
 			}
 
-
-			val = val_1 + val_2 + val_3;
-			err = std::abs(err_1) + std::abs(err_2) + std::abs(err_3);
+            // Copy into output
+			outval = vals[0] + vals[1] + vals[2];
+			outerr = std::abs(errs[0]) + std::abs(errs[1]) + std::abs(errs[2]);
 
 			break;
 		}
@@ -697,15 +724,15 @@ public:
 #endif
         if constexpr (std::is_same<decltype(Tstar), double>::value) {
             // If T is double (real)
-            return std::make_tuple(val[0],err[0]);
+            return std::make_tuple(outval[0],outerr[0]);
         }
         else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
             // If T is a complex number (perhaps for complex step derivatives)
-            return std::make_tuple(decltype(Tstar)(val[0], val[1]), decltype(Tstar)(err[0], err[1]));
+            return std::make_tuple(decltype(Tstar)(outval[0], outval[1]), decltype(Tstar)(outerr[0], outerr[1]));
         }
         else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
             // If T is a multicomplex number
-            return std::make_tuple(decltype(Tstar)(val), decltype(Tstar)(err));
+            return std::make_tuple(decltype(Tstar)(outval), decltype(Tstar)(outerr));
         }
     }
     
