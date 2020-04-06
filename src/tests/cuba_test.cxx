@@ -1,66 +1,49 @@
-/*
-	demo-c.c
-		test program for the Cuba library
-		last modified 13 Mar 15 th
-*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 
-#if REALSIZE == 16
-#include "cubaq.h"
-#elif REALSIZE == 10
-#include "cubal.h"
-#else
 #include "cuba.h"
+
+#include <vector>
+#ifndef M_PI
+#define M_PI 3.141592654
 #endif
 
+const std::vector<cubareal> lower = {0.0001, 0.0001, -1}, upper = {200,200,1};
 
-static inline cubareal Sq(cubareal x) {
-  return x*x;
-}
-
-
-static int Integrand(const int *ndim, const cubareal xx[],
+int Integrand(const int *ndim, const cubareal xx[],
   const int *ncomp, cubareal ff[], void *userdata) {
 
-#define x xx[0]
-#define y xx[1]
-#define z xx[2]
-#define f ff[0]
+    double Tstar = 10;
+    double rstarmax = 0.24697188338026893, potmax = 7110.0857087661225;
+    double alpha = 13;
+    auto Vmod = [alpha, rstarmax, potmax](double rstar) { return (rstar >= rstarmax) ? 1/(1-6/alpha)*(6/alpha*exp(alpha*(1 - rstar)) - pow(rstar, -6)) : potmax; };
+    auto f = [Vmod, Tstar](double r) {return 1.0 - exp(-Vmod(r) / Tstar); };
+    auto SQUARE = [](double x) {return x*x;};
+  
+    auto r12 = xx[0], r13 = xx[1], eta_angle = xx[2];
+    auto rangle = sqrt(SQUARE(r12) + SQUARE(r13) - 2 * r12 * r13 * eta_angle);
+    ff[0] = SQUARE(r12) * f(r12) * SQUARE(r13) * f(r13) * f(rangle);
+    return 0;
+}
 
-#ifndef FUN
-#define FUN 1
-#endif
+int ScaledIntegrand(const int *ndim, const cubareal x[],
+  const int *ncomp, cubareal result[], void *userdata) {
 
-#define rsq (Sq(x) + Sq(y) + Sq(z))
+    std::vector<cubareal> scaledx(*ndim);
+    cubareal jacobian = 1.0;
+    for (int dim = 0; dim < *ndim; ++dim){
+        auto range = upper[dim] - lower[dim];
+        jacobian *= range;
+        scaledx[dim] = lower[dim] + x[dim]*range;
+    }
 
-#if FUN == 1
-  f = sin(x)*cos(y)*exp(z);
-#elif FUN == 2
-  f = 1/(Sq(x + y) + .003)*cos(y)*exp(z);
-#elif FUN == 3
-  f = 1/(3.75 - cos(M_PI*x) - cos(M_PI*y) - cos(M_PI*z));
-#elif FUN == 4
-  f = fabs(rsq - .125);
-#elif FUN == 5
-  f = exp(-rsq);
-#elif FUN == 6
-  f = 1/(1 - x*y*z + 1e-10);
-#elif FUN == 7
-  f = sqrt(fabs(x - y - z));
-#elif FUN == 8
-  f = exp(-x*y*z);
-#elif FUN == 9
-  f = Sq(x)/(cos(x + y + z + 1) + 5);
-#elif FUN == 10
-  f = (x > .5) ? 1/sqrt(x*y*z + 1e-5) : sqrt(x*y*z);
-#else
-  f = (rsq < 1) ? 1 : 0;
-#endif
+    Integrand(ndim, &(scaledx[0]), ncomp, result, userdata);
 
-  return 0;
+    for (int comp = 0; comp < *ncomp; ++comp){
+        result[comp] *= jacobian;
+    }
+    return 0;
 }
 
 /*********************************************************************/
@@ -69,15 +52,15 @@ static int Integrand(const int *ndim, const cubareal xx[],
 #define NCOMP 1
 #define USERDATA NULL
 #define NVEC 1
-#define EPSREL 1e-3
+#define EPSREL 1e-4
 #define EPSABS 1e-12
-#define VERBOSE 2
+#define VERBOSE 0
 #define LAST 4
 #define SEED 0
-#define MINEVAL 0
-#define MAXEVAL 50000
+#define MINEVAL 10000
+#define MAXEVAL 5000000
 
-#define NSTART 1000
+#define NSTART 10000
 #define NINCREASE 500
 #define NBATCH 1000
 #define GRIDNO 0
@@ -104,11 +87,11 @@ static int Integrand(const int *ndim, const cubareal xx[],
 int main() {
   int comp, nregions, neval, fail;
   cubareal integral[NCOMP], error[NCOMP], prob[NCOMP];
-
+  auto S = 8*M_PI*M_PI/3;
 #if 1
   printf("-------------------- Vegas test --------------------\n");
 
-  Vegas(NDIM, NCOMP, Integrand, USERDATA, NVEC,
+  Vegas(NDIM, NCOMP, ScaledIntegrand, USERDATA, NVEC,
     EPSREL, EPSABS, VERBOSE, SEED,
     MINEVAL, MAXEVAL, NSTART, NINCREASE, NBATCH,
     GRIDNO, STATEFILE, SPIN,
@@ -116,15 +99,15 @@ int main() {
 
   printf("VEGAS RESULT:\tneval %d\tfail %d\n",
     neval, fail);
-  for( comp = 0; comp < NCOMP; ++comp )
+  for( comp = NCOMP-1; comp < NCOMP; ++comp )
     printf("VEGAS RESULT:\t%.8f +- %.8f\tp = %.3f\n",
-      (double)integral[comp], (double)error[comp], (double)prob[comp]);
+        S*(double)integral[comp], S*(double)error[comp], (double)prob[comp]);
 #endif
 
 #if 1
   printf("\n-------------------- Suave test --------------------\n");
 
-  Suave(NDIM, NCOMP, Integrand, USERDATA, NVEC,
+  Suave(NDIM, NCOMP, ScaledIntegrand, USERDATA, NVEC,
     EPSREL, EPSABS, VERBOSE | LAST, SEED,
     MINEVAL, MAXEVAL, NNEW, NMIN, FLATNESS,
     STATEFILE, SPIN,
@@ -132,15 +115,15 @@ int main() {
 
   printf("SUAVE RESULT:\tnregions %d\tneval %d\tfail %d\n",
     nregions, neval, fail);
-  for( comp = 0; comp < NCOMP; ++comp )
+  for( comp = NCOMP - 1; comp < NCOMP; ++comp )
     printf("SUAVE RESULT:\t%.8f +- %.8f\tp = %.3f\n",
-      (double)integral[comp], (double)error[comp], (double)prob[comp]);
+      S*(double)integral[comp], S*(double)error[comp], (double)prob[comp]);
 #endif
 
 #if 1
   printf("\n------------------- Divonne test -------------------\n");
 
-  Divonne(NDIM, NCOMP, Integrand, USERDATA, NVEC,
+  Divonne(NDIM, NCOMP, ScaledIntegrand, USERDATA, NVEC,
     EPSREL, EPSABS, VERBOSE, SEED,
     MINEVAL, MAXEVAL, KEY1, KEY2, KEY3, MAXPASS,
     BORDER, MAXCHISQ, MINDEVIATION,
@@ -150,15 +133,15 @@ int main() {
 
   printf("DIVONNE RESULT:\tnregions %d\tneval %d\tfail %d\n",
     nregions, neval, fail);
-  for( comp = 0; comp < NCOMP; ++comp )
+  for( comp = NCOMP - 1; comp < NCOMP; ++comp )
     printf("DIVONNE RESULT:\t%.8f +- %.8f\tp = %.3f\n",
-      (double)integral[comp], (double)error[comp], (double)prob[comp]);
+      S*(double)integral[comp], S*(double)error[comp], (double)prob[comp]);
 #endif
 
 #if 1
   printf("\n-------------------- Cuhre test --------------------\n");
 
-  Cuhre(NDIM, NCOMP, Integrand, USERDATA, NVEC,
+  Cuhre(NDIM, NCOMP, ScaledIntegrand, USERDATA, NVEC,
     EPSREL, EPSABS, VERBOSE | LAST,
     MINEVAL, MAXEVAL, KEY,
     STATEFILE, SPIN,
@@ -168,9 +151,8 @@ int main() {
     nregions, neval, fail);
   for( comp = 0; comp < NCOMP; ++comp )
     printf("CUHRE RESULT:\t%.8f +- %.8f\tp = %.3f\n",
-      (double)integral[comp], (double)error[comp], (double)prob[comp]);
+      S*(double)integral[comp], S*(double)error[comp], (double)prob[comp]);
 #endif
 
   return 0;
 }
-
