@@ -603,9 +603,9 @@ public:
 
         // The quadruple integral needs to be divided by 8*pi, but the leading term in the
         // expression for B_2 is -2\pi, so factor becomes -1/4, or -0.25
-        for (auto i = 0; i < val.size(); ++i) {
-            val[i] = -0.25 * integral[i];
-            err[i] = -0.25 * error[i];
+        for (auto i = 0; i < outval.size(); ++i) {
+            outval[i] = -0.25 * integral[i];
+            outerr[i] = -0.25 * error[i];
         }
 #else
         // Use cubature to do the integration...
