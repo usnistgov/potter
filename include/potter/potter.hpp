@@ -520,12 +520,14 @@ public:
             xmins = {{ rstart, rstart, -1 },{ rbreak, rstart, -1 } }, xmaxs = {{ rbreak, rend, 1 },{ rend, rend, 1 } }; // Limits on r12, r13, eta
             break;
             }
-        case 4:
+        case 4: {
             // Limits on r14, r13, gamma, r12, eta
             // Limits on eta, r12, r13, eta, r14
             // Limits on eta,zeta,gamma, r12, r13, r14	
-            xmins = {{rstart, rstart, -1 , rstart, -1 }, { -1, rstart, rstart, -1 , rstart }, { -1,  rstart, -1 , rstart, rstart , rstart }};
-            xmaxs = {{ rend, rend, 1 , rend, 1 }, { 1, rend, rend, 1 , rend }, { 1, 2 * M_PI, 1, rend, rend , rend }};
+            xmins = { {rstart, rstart, -1 , rstart, -1 }, { -1, rstart, rstart, -1 , rstart }, { -1,  rstart, -1 , rstart, rstart , rstart } };
+            xmaxs = { { rend, rend, 1 , rend, 1 }, { 1, rend, rend, 1 , rend }, { 1, 2 * M_PI, 1, rend, rend , rend } };
+            break; 
+        }
         default:
             break;
         }
@@ -622,19 +624,13 @@ public:
             };
 
             int naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
-            auto& val = vals[0]; 
-            auto& err = errs[0];
             hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
 
+            // Copy into output
+            // ....
             // The quadruple integral needs to be divided by 8*pi, but the leading term in the
             // expression for B_2 is -2\pi, so factor becomes -1/4, or -0.25
-            for (auto i = 0; i < val.size(); ++i) {
-                val[i] *= -0.25; 
-                err[i] *= -0.25;
-            }
-            
-            // Copy into output
-            outval = val; outerr = err;
+            outval = -0.25*vals[0]; outerr = -0.25*errs[0];
             break;
         }
         case 3:
@@ -650,22 +646,14 @@ public:
             int naxes = 3; // How many dimensions the integral is taken over (r12, r13, eta)
             int Ncallmax = static_cast<int>(1e6);
             for (auto i = 0; i < xmins.size(); ++i){
-                auto& val = vals[i];
-                auto& err = errs[i];
-                auto& xmin = xmins[i];
-                auto& xmax = xmaxs[i];
                 
-                hcubature(ndim, cubature_integrand, &shared, naxes, &(xmin[0]), &(xmax[0]), Ncallmax, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
-
-                // Rescale with the leading factor
-                for (auto i = 0; i < val.size(); ++i) {
-                    val[i] *= 8*M_PI*M_PI/3; 
-                    err[i] *= 8*M_PI*M_PI/3;
-                }
+                hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[i][0]), &(xmaxs[i][0]), Ncallmax, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[i][0]), &(errs[i][0]));
 
                 // Copy into output
-                outval += val; outerr += err;
+                outval += vals[i]; outerr += std::abs(errs[i]);
             }
+            // Rescale with the leading factor
+            outval *= 8*M_PI*M_PI/3; outerr *= 8*M_PI*M_PI/3;
             
             break;
         }
@@ -693,7 +681,7 @@ public:
 			};
 
 			// prefactors for each contribution 
-			std::valarray<double> pre_factors = { -3.0*(27.0 / 4.0) , 3.0*(27.0 / 2.0) ,  -27.0 / (8.0*M_PI) };
+			std::valarray<double> pre_factors = {-3.0*(27.0/4.0), 3.0*(27.0/2.0), -27.0/(8.0*M_PI)};
 
 			int naxes = 5; // How many dimensions the integral is taken over (r14, r13, gamma, r12, eta)
             int Nstepmax = static_cast<int>(1e8);
@@ -703,13 +691,9 @@ public:
 			naxes = 6;
 			hcubature(ndim, cubature_integrand_3, &shared, naxes, &(xmins[2][0]), &(xmaxs[2][0]), Nstepmax, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[2][0]), &(errs[2][0]));
 
-			for (auto i = 0; i < vals[0].size(); ++i) {
-                for (auto& val : vals) {
-                    val[i] *= pre_factors[0];
-                }
-                for (auto& err : errs) {
-                    err[i] *= pre_factors[0];
-                }
+			for (auto i = 0; i < pre_factors.size(); ++i) {
+                vals[i] *= pre_factors[i];
+                errs[i] *= pre_factors[i];
 			}
 
             // Copy into output
