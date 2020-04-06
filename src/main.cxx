@@ -53,27 +53,26 @@ void check_EXP6(int order, double alpha, const std::string &filename) {
     i.get_evaluator().connect_potentials(f, 1/* number of sites */);
     
     // B_2^*=B_2/r_m^3
-    std::cout << "T,B,errest(B),neff" << std::endl;
-    ofs << "T,B,errest(B),neff" << std::endl;
-    for (auto Tstar = 0.1; Tstar < 1e7; Tstar *= 1.2) {
-        int Nderivs = 2;
-        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.00001, 10000, i.mol1, i.mol2);
+    // B_3^*=B_3/r_m^6
+    std::string header = "order,T,B,errest(B),dBdT,errest(dBdT),d2BdT2,errest(d2BdT),neff,elapsed / s";
+    std::cout << header << std::endl;
+    ofs << header << std::endl;
+    double Tmin = 0.1, Tmax = 1e7;
+    int NT = 200;
+    std::vector<double> Tvec; double dT = (log(Tmax) - log(Tmin)) / (NT - 1); for (auto i = 0; i < NT; ++i) { Tvec.push_back(exp(log(Tmin) + dT * i)); }
+    int Nderivs = 2;
+    auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, Nderivs, Tvec, 0.0001, 200, i.mol1, i.mol2); // radius in A, B in A^3/molecule
+    for (auto val : results) {
 
+        auto Tstar = val["T"];
         auto B = val["B"];
         auto dBdT = val["dBdT"];
         auto d2BdT2 = (val.count("d2BdT2") > 0) ? val["d2BdT2"] : -1e30;
         auto elapsed = val["elapsed / s"];
-
-        // Defining the term Q_i \equiv (1/T)^i*d^iB_2/d(1/T)^i...
-        // The term 1/T is the analog of tau=Tr/T in equation of state land; the 
-        // numerator cancels in the derivative
-        auto Q0 = B;
-        auto Q1 = -Tstar * dBdT;
-        auto Q2 = Tstar * Tstar * d2BdT2 + 2 * Tstar * dBdT;
-        auto neff = -3 * (Q0 - Q1) / Q2;
+        auto neff = -3 * (B+Tstar*dBdT) / (Tstar*Tstar*d2BdT2 + 2*Tstar*dBdT);
 
         std::stringstream out;
-        out << Tstar << "," << val["B"] << "," << val["error(B)"] << "," << neff << std::endl;
+        out << order << "," << Tstar << "," << val["B"] << "," << val["error(B)"] << "," << val["dBdT"] << "," << val["error(dBdT)"] << "," << val["d2BdT2"] << "," << val["error(d2BdT2)"] << "," << neff << "," << elapsed << std::endl;
         auto sout = out.str();
         std::cout << sout;
         ofs << sout;
