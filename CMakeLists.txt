@@ -4,7 +4,6 @@ project(potter)
 set(CMAKE_CXX_STANDARD 17)
 
 if (NOT MSVC)
-    message(STATUS "Untarred Cuba 4.2")
     set(ZIPFN "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2.tar.gz")
     set(OUTFN "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2/libcuba.a")
     if(NOT EXISTS ${OUTFN})
@@ -45,12 +44,17 @@ else()
 endif()
 
 add_executable(cuba-test "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/cuba_test.cxx")
-target_link_libraries(cuba-test PRIVATE "cuba")
+if (NOT MSVC)
+	target_link_libraries(cuba-test PRIVATE "cuba")
+endif()
 link_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
 target_include_directories(cuba-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
 
 add_executable(catchtest "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/catch_runner.cxx")
 add_cubature(catchtest)
+if (NOT MSVC)
+target_link_libraries(cuba-test PRIVATE "cuba")
+endif()
 
 macro(add_nix_libraries target)
     # See https://stackoverflow.com/a/29871891
