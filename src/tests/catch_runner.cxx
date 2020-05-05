@@ -61,8 +61,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
     }
 }
 
-
-TEST_CASE("Check B_4  values against Singh&Kofke values", "[B_4]") {
+TEST_CASE("Check B_4 values against Singh&Kofke values", "[B_4]") {
 
 	std::vector<std::vector<double>> coords0 = { {0,0,0} };
 	Molecule<double> m0(coords0), m1(coords0);
@@ -73,8 +72,8 @@ TEST_CASE("Check B_4  values against Singh&Kofke values", "[B_4]") {
 	i.get_evaluator().connect_potentials(f, 1/* number of sites */);
 
 	// Singh and Kofke, PRL, doi:10.1103/PhysRevLett.92.220601
-	std::vector<double> B4_over_b3 = { -120.82, -18.77 , -0.2697,0.3385 , 0.3168, 0.2701 , 0.2256, 0.12279, 0.1131, 0.1156};
-	std::vector<double> standarderr = { 0.002, 0.003, 0.00002, 0.00005, 0.00005, 0.00004, 0.00003, 0.000007, 0.00001, 0.00001, 0.0002 };
+	std::vector<double> B4_over_b3 = { -120.82, -18.77 , -0.2697, 0.3385, 0.3168, 0.2701 , 0.2256, 0.12279, 0.1131, 0.1341, 0.1156};
+	std::vector<double> standarderr = { 0.2, 0.03, 0.002, 0.0005, 0.0005, 0.0004, 0.0003, 0.00007, 0.0001, 0.0001, 0.0002};
 	std::vector<double> Tstar = { 0.625, 0.75, 1.0, 1.2, 1.3, 1.4, 1.5, 2, 2.5, 5, 10 };
 
 	for (auto k = 0; k < Tstar.size(); ++k) {
@@ -83,8 +82,8 @@ TEST_CASE("Check B_4  values against Singh&Kofke values", "[B_4]") {
 		auto B4 = val["B"];
 		auto B4err_potter = val["error(B)"];
 
-		auto B4_SK = B4_over_b3[k] * pow(2 * M_PI / 3, 2);
-		auto B4err_SK = standarderr[k] * pow(2 * M_PI / 3, 2);
+		auto B4_SK = B4_over_b3[k] * pow(2*M_PI/3, 3);
+		auto B4err_SK = standarderr[k] * pow(2*M_PI/3, 3);
 
 		CHECK(std::abs(B4 - B4_SK) < B4err_SK * 2);
 	}
