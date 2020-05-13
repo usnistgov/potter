@@ -4,7 +4,13 @@
 
 #include <iostream>
 #include <fstream>
+#include <iomanip>
 #include <cmath>
+
+#include "nlohmann/json.hpp"
+
+// for convenience
+using json = nlohmann::json;
 
 double gr = (sqrt(5) + 1) / 2;
 
@@ -57,26 +63,15 @@ void check_EXP6(int order, double alpha, const std::string &filename) {
     std::string header = "order,T,B,errest(B),dBdT,errest(dBdT),d2BdT2,errest(d2BdT),neff,elapsed / s";
     std::cout << header << std::endl;
     ofs << header << std::endl;
-    double Tmin = 0.1, Tmax = 1e7;
+    double Tmin = 1e-1, Tmax = 1e7;
     int NT = 200;
     std::vector<double> Tvec; double dT = (log(Tmax) - log(Tmin)) / (NT - 1); for (auto i = 0; i < NT; ++i) { Tvec.push_back(exp(log(Tmin) + dT * i)); }
-    int Nderivs = 2;
-    auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, Nderivs, Tvec, 0.0001, 200, i.mol1, i.mol2); // radius in A, B in A^3/molecule
-    for (auto val : results) {
+    int Nderivs = 6;
+    const auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, Nderivs, Tvec, 0.0001, 200, i.mol1, i.mol2); // radius in sigma, B in sigma^3/molecule
 
-        auto Tstar = val["T"];
-        auto B = val["B"];
-        auto dBdT = val["dBdT"];
-        auto d2BdT2 = (val.count("d2BdT2") > 0) ? val["d2BdT2"] : -1e30;
-        auto elapsed = val["elapsed / s"];
-        auto neff = -3 * (B+Tstar*dBdT) / (Tstar*Tstar*d2BdT2 + 2*Tstar*dBdT);
-
-        std::stringstream out;
-        out << order << "," << Tstar << "," << val["B"] << "," << val["error(B)"] << "," << val["dBdT"] << "," << val["error(dBdT)"] << "," << val["d2BdT2"] << "," << val["error(d2BdT2)"] << "," << neff << "," << elapsed << std::endl;
-        auto sout = out.str();
-        std::cout << sout;
-        ofs << sout;
-    }
+    // write prettified JSON of results to output file
+    std::ofstream o(filename);
+    o << std::setw(2) << json(results) << std::endl;
 }
 
 void check_LJ() {
@@ -204,7 +199,7 @@ int main() {
     check_EXP6(3, 13, "B3_alpha13_EXP6.csv");
     //check_LJ();
     //check_N2("results_N2.txt");
-    for (auto N = 1; N < 20; N *= 2){
+    /*for (auto N = 1; N < 20; N *= 2){
        LJChain(N, "results" + std::to_string(N) + ".csv");
-    }
+    }*/
 }

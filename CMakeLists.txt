@@ -24,6 +24,7 @@ else()
 endif()
 
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/include")
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Eigen")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/cubature-master")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/ThreadPool2")

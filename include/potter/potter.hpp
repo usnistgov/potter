@@ -748,15 +748,24 @@ public:
                 });
             bool and_val = true;
             auto [val,esterr] = diff_mcx1(f, T, Nderivs, and_val);
-            return {
-                {"T", T},
-                {"B", val[0]},
-                {"error(B)", esterr[0]},
-                {"dBdT", val[1]},
-                {"error(dBdT)", esterr[1]},
-                {"d2BdT2", val[2]},
-                {"error(d2BdT2)", esterr[2]},
-            };
+            std::map<std::string, double> o = { {"T", T} };
+            for (auto i = 0; i < Nderivs; ++i) {
+                switch (i) {
+                case 0:
+                    o["B"] = val[0];
+                    o["error(B)"] = esterr[0];
+                    break;
+                case 1:
+                    o["dBdT"] = val[1];
+                    o["error(dBdT)"] = esterr[1];
+                    break;
+                default:
+                    auto n = std::to_string(i);
+                    o["d" + n + "BdT" + n] = val[i];
+                    o["error(d" + n + "BdT" + n + ")"] = esterr[i];
+                }
+            }
+            return o;
         }
     }
     auto parallel_B_and_derivs(int order, int Nthreads, int Nderivs, std::vector<double> Tvec, double rstart, double rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2)
