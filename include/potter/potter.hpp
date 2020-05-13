@@ -124,6 +124,7 @@ public:
     void rotate_plusy(TYPE angle) {
         Eigen::Transform<double, 3, Eigen::Affine> rot(Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitY()));
         coords = rot.linear() * coords.matrix();
+        //coords = rotY3(angle).matrix() * coords.matrix(); // Old method
     }
     void rotate_negativey(TYPE angle) {
         rotate_plusy(-angle);

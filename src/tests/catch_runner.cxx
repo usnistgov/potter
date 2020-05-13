@@ -3,7 +3,47 @@
 
 #include "potter/potter.hpp"
 #include "potter/molecules.hpp"
+#include "potter/molecules/CO2.hpp"
 #include "potter/correlations.hpp"
+
+TEST_CASE("Check N_2 values", "[B_2],[N2]") {
+    auto pot = get_nitrogen();
+    SECTION("Check potential evaluation") {
+        for (auto row : validdata_nitrogen_potential()) {
+            auto actual = row.V12BkB_K;
+            auto check = pot.potential(row.r_A, row.theta1_deg/180*M_PI, row.theta2_deg/180 * M_PI, row.phi_deg / 180 * M_PI);
+            CAPTURE(row.r_A);
+            CAPTURE(row.theta1_deg);
+            CAPTURE(row.theta2_deg);
+            CAPTURE(row.phi_deg);
+            CHECK(std::abs(actual - check) < std::abs(actual) * 0.01);
+        }
+    }
+}
+
+TEST_CASE("Check CO2 values", "[B_2],[CO2]") {
+    auto pot = CarbonDioxide::get_integrator();
+    SECTION("Check potential evaluation") {
+        for (auto row : CarbonDioxide::potential_validdata()) {
+            auto actual = row.V12BkB_K;
+            auto check = pot.potential(row.r_A, row.theta1_deg/180*M_PI, row.theta2_deg/180*M_PI, row.phi_deg/180*M_PI);
+            CAPTURE(row.r_A);
+            CAPTURE(row.theta1_deg);
+            CAPTURE(row.theta2_deg);
+            CAPTURE(row.phi_deg);
+            CHECK(std::abs(actual - check) < std::abs(actual) * 0.01);
+        }
+    }
+    SECTION("Check classical second virials") {
+        for (auto row : CarbonDioxide::check_B2cl_vals()) {
+            auto actual = row.B2cl_cm3mol;
+            auto rmin_A = 2.0;
+            auto B = pot.B_and_derivs(2, 1, row.T_K, rmin_A, 100, pot.mol1, pot.mol2)["B"];
+            auto check = (B + 2*M_PI/3*pow(rmin_A, 3)) * 6.02214086e23 / 1e24 ; // cm^3/mol
+            CHECK(std::abs(actual - check) < std::abs(actual) * 0.01);
+        }
+    }
+}
 
 TEST_CASE("Check B_2 values against Singh&Kofke values", "[B_2]") {
 
