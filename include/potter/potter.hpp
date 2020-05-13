@@ -749,7 +749,7 @@ public:
             bool and_val = true;
             auto [val,esterr] = diff_mcx1(f, T, Nderivs, and_val);
             std::map<std::string, double> o = { {"T", T} };
-            for (auto i = 0; i < Nderivs; ++i) {
+            for (auto i = 0; i <= Nderivs; ++i) {
                 switch (i) {
                 case 0:
                     o["B"] = val[0];
