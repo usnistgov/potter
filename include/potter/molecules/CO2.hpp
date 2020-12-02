@@ -6,10 +6,10 @@ and thermophysical properties of dilute carbon dioxide gas, Chem.Phys.Lett
 Link : https://dx.doi.org/10.1016/j.cplett.2014.08.057
 */
 
-namespace CarbonDioxide{
+namespace HellmannCarbonDioxide{
 
 // Get a fully instantiated class for carbon dioxide
-auto get_potential() {
+auto get_integrator() {
 
     //X,Y,Z coordinates, in Angstrom
     std::vector<std::vector<double>> coords0 = {

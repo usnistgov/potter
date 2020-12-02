@@ -1,5 +1,6 @@
 #include "potter/potter.hpp"
 #include "potter/molecules.hpp"
+#include "potter/molecules/CO2.hpp"
 #include "potter/correlations.hpp"
 
 #include <iostream>
@@ -145,6 +146,43 @@ void check_N2(const std::string &filename) {
     }
 }
 
+/// Check the CO2 classical values against tabulated values
+void check_CO2_classical(const std::string& filename) {
+    auto integr = HellmannCarbonDioxide::get_integrator();
+    auto Nthreads = 6;
+    auto Nderiv = 3;
+    std::vector<double> Tvec, Bvals;
+    for (auto el : HellmannCarbonDioxide::check_B2cl_vals()) {
+        Tvec.push_back(el.T_K);
+        Bvals.push_back(el.B2cl_cm3mol);
+    }
+    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
+    auto i = 0;
+    for (auto &val : results) {
+        val["B"] += 2*M_PI/3*8;
+        val["B2cl(Hellmann) / A^3/molecule"] = Bvals[i]/(6.02214086e23/1e24);
+        val["diff"] = val["B2cl(Hellmann) / A^3/molecule"] - val["B"];
+        i++;
+    }
+    // write JSON of results to output file
+    std::ofstream o(filename); o << std::setw(2) << json(results) << std::endl;
+}
+
+void calculate_CO2(const std::string& filename) {
+    auto integr = HellmannCarbonDioxide::get_integrator();
+    auto Nthreads = 6;
+    auto Nderiv = 3;
+    double Tmin = 200, Tmax = 2e4, rmin = 2; // rmin in A
+    int NT = 300;
+    std::vector<double> Tvec; double dT = (log(Tmax) - log(Tmin)) / (NT - 1); for (auto i = 0; i < NT; ++i) { Tvec.push_back(exp(log(Tmin) + dT * i)); }
+    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
+    // Add a hard core contribution for r from zero to 2 A separation
+    for (auto& val : results) {
+        val["B"] += 2*M_PI/3*std::pow(rmin, 3);
+    }
+    // write JSON of results to output file
+    std::ofstream o(filename); o << std::setw(2) << json(results) << std::endl;
+}
 void LJChain(int N, const std::string &filename) {
     auto i = get_rigidLJChain(N, 1.0);
     std::ofstream ofs(filename);
