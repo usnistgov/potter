@@ -168,6 +168,29 @@ void check_CO2_classical(const std::string& filename) {
     std::ofstream o(filename); o << std::setw(2) << json(results) << std::endl;
 }
 
+void check_CO2_Merker(const std::string& filename) {
+    auto integr = CarbonDioxide::get_Merker_integrator();
+    auto Nthreads = 6;
+    auto Nderiv = 3;
+    std::vector<double> Tvec = { 250,275,300,325,400,500,600,800,1000,2000,4000,6000,8000,10000 };
+    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
+    auto i = 0;
+    for (auto& val : results) {
+        val["B"] += 2 * M_PI / 3 * 8;
+        val["B / m^3/mol"] = val["B"] * (6.02214086e23 / 1e24);
+        val["B / L/mol"] = val["B / m^3/mol"]/1000;
+        auto B = val["B"];
+        auto dBdT = val["dBdT"];
+        auto d2BdT2 = (val.count("d2BdT2") > 0) ? val["d2BdT2"] : -1e30;
+        auto Tstar = val["T"];
+
+        val["neff"] = -3 * (B + Tstar * dBdT) / (Tstar * Tstar * d2BdT2 + 2 * Tstar * dBdT);
+        i++;
+    }
+    // write JSON of results to output file
+    std::ofstream o(filename); o << std::setw(2) << json(results) << std::endl;
+}
+
 void calculate_CO2(const std::string& filename) {
     auto integr = HellmannCarbonDioxide::get_integrator();
     auto Nthreads = 6;
