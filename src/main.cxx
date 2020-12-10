@@ -256,10 +256,20 @@ void LJChain(int N, const std::string &filename) {
 }
 
 int main() {
-    check_EXP6(2, 13, "B2_alpha13_EXP6.csv");
-    check_EXP6(3, 13, "B3_alpha13_EXP6.csv");
+    
+    //check_EXP6(2, 11, "B2_alpha11_EXP6.csv"); 
+    //check_EXP6(2, 12, "B2_alpha12_EXP6.csv");
+    //check_EXP6(2, 13, "B2_alpha13_EXP6.csv");
+    //check_EXP6(2, 14, "B2_alpha14_EXP6.csv");
+    //check_EXP6(2, 15, "B2_alpha15_EXP6.csv");
+    //check_EXP6(3, 13, "B3_alpha13_EXP6.csv");
     //check_LJ();
     //check_N2("results_N2.txt");
+    //check_CO2_classical("classical_CO2.json");
+    //check_Singh();
+    calculate_CO2("results_CO2.json");
+    //calculate_N2("results_N2.json");
+    //check_CO2_Merker("results_CO2_Merker.json");
     /*for (auto N = 1; N < 20; N *= 2){
        LJChain(N, "results" + std::to_string(N) + ".csv");
     }*/
