@@ -159,8 +159,12 @@ class PotentialEvaluator {
 public:
     std::map<std::tuple<std::size_t, std::size_t>, std::function<double(double)> > potential_map;
 
+    ///< Additional contributions, handled in a very generic way via a callback
+    std::vector<std::function<double(const Molecule<TYPE> &, const Molecule<TYPE>&)>> generic_contributions;
+
     TYPE eval_pot(const Molecule<TYPE>& molA, const Molecule<TYPE>& molB) const {
         TYPE u = 0.0;
+        // Sum up site-site contributions to total potential energy
         for (auto iatom = 0; iatom < molA.get_Natoms(); ++iatom) {
             auto xyzA = molA.get_xyz_atom(iatom);
             for (auto jatom = 0; jatom < molB.get_Natoms(); ++jatom) {
@@ -169,6 +173,10 @@ public:
                 auto f_potential = get_potential(iatom, jatom);
                 u += f_potential(distij);
             }
+        }
+        // Add also contributions for other kinds of interactions (e.g., dipole, quadrupole, etc.)
+        for (auto contrib : generic_contributions) {
+            u += contrib(molA, molB);
         }
         return u;
     }
@@ -190,6 +198,12 @@ public:
     */
     void add_potential(std::size_t iatom, std::size_t jatom, std::function<double(double)>& f) {
         potential_map[std::make_tuple(iatom, jatom)] = f;
+    }
+    /*
+    Add a generalized contribution to the overall potential energy.  Callback function takes two molecules
+    */
+    void add_generic_contribution(const std::function<double(const Molecule<TYPE>&, const Molecule<TYPE>&)>& f) {
+        generic_contributions.push_back(f);
     }
     /*
     Get a reference to the potential function for a particular site-site interaction
