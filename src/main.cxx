@@ -267,9 +267,9 @@ int main() {
     //check_N2("results_N2.txt");
     //check_CO2_classical("classical_CO2.json");
     //check_Singh();
-    calculate_CO2("results_CO2.json");
+    //calculate_CO2("results_CO2.json");
     //calculate_N2("results_N2.json");
-    //check_CO2_Merker("results_CO2_Merker.json");
+    check_CO2_Merker("results_CO2_Merker.json");
     /*for (auto N = 1; N < 20; N *= 2){
        LJChain(N, "results" + std::to_string(N) + ".csv");
     }*/

@@ -1414,29 +1414,38 @@ auto check_B2cl_vals() {
 
 namespace CarbonDioxide {
 
-    auto get_Merker_integrator() {
+    /// Parameters for the 3-site model with Lennard-Jones site-site interactions and point quadrupole
+    struct ThreeCLJQArgs {
+        double l_CO, // Angstrom
+            epskBCC, // K
+            epskBOO, // K
+            sigmaCC, // Angstrom
+            sigmaOO, // Angstrom
+            Q_DA;    // Debye*Angstrom
+    };
+    
+    auto get_3CLJQ_integrator(const ThreeCLJQArgs &args) {
 
         const std::vector<char> types = { 'O', 'C', 'O' }; 
         // X,Y,Z coordinates, in Angstrom
         const std::vector<std::vector<double>> coords0 = {
-            {-1.2869, 0, 0},
+            {-args.l_CO, 0, 0},
             { 0.0000, 0, 0},
-            { 1.2869, 0, 0},
+            { args.l_CO, 0, 0},
         };
         using MolType = Molecule<double>;
         MolType m0(coords0);
         //static_assert(types.size() == coords0.size(), "types and coords0 are not the same size");
         // Alike interactions are as given in Merker
         // sigma are in Angstrom, epsilon/kB are in K
-        auto sigmaCC = 2.8137, epskBCC = 12.3724, sigmaOO = 2.9755, epskBOO = 100.493, Q_DA = 4.0739;
         // Unlike interactions are modeled with Lorentz-Berthelot mixing rules (communication with R. Fingerhut & J. Vrabec)
-        auto epskBCO = sqrt(epskBCC * epskBOO); 
-        auto sigmaCO = (sigmaCC + sigmaOO)/2;
+        auto epskBCO = sqrt(args.epskBCC * args.epskBOO);
+        auto sigmaCO = (args.sigmaCC + args.sigmaOO)/2;
         std::map<std::tuple<char, char>, std::tuple<double, double>> coeffs = {
-             {{'C','C'}, {epskBCC, sigmaCC}},
+             {{'C','C'}, {args.epskBCC, args.sigmaCC}},
              {{'C','O'}, {epskBCO, sigmaCO}},
              {{'O','C'}, {epskBCO, sigmaCO}},
-             {{'O','O'}, {epskBOO, sigmaOO}},
+             {{'O','O'}, {args.epskBOO, args.sigmaOO}},
         };
 
         // Connect up the lambda functions for site-site interactions
@@ -1458,8 +1467,8 @@ namespace CarbonDioxide {
             }
         }
         // Convert quadrupolar moment given in Debye*Angstrom to SI units of C*m^2
-        auto Q_Cm2 = 3.33564e-30 / 1e10 * Q_DA;
-        // Also add the quadrupolar contribution to the potential
+        auto Q_Cm2 = 3.33564e-30 / 1e10 * args.Q_DA;
+        // Also add the point quadrupolar contribution to the potential
         // See Stoll FPE 2001, Eq. 1
         std::function<double(const MolType&, const MolType&)> g = [Q_Cm2](const MolType& mol1, const MolType& mol2) {
             Eigen::Array3d rCOM = mol1.get_xyz_atom(1) - mol2.get_xyz_atom(1); ///< Distance vector between center-of-mass of moleccules
@@ -1485,5 +1494,12 @@ namespace CarbonDioxide {
         };
         integr.get_evaluator().add_generic_contribution(g);
         return integr;
+    }
+
+    /// Get the integrator of Merker
+    auto get_Merker_integrator() {
+        auto a = ThreeCLJQArgs();
+        a.l_CO = 1.2869; a.sigmaCC = 2.8137; a.epskBCC = 12.3724; a.sigmaOO = 2.9755; a.epskBOO = 100.493; a.Q_DA = 4.0739;
+        return get_3CLJQ_integrator(a);
     }
 } /* namespace CarbonDioxide*/
