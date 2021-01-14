@@ -1502,4 +1502,108 @@ namespace CarbonDioxide {
         a.l_CO = 1.2869; a.sigmaCC = 2.8137; a.epskBCC = 12.3724; a.sigmaOO = 2.9755; a.epskBOO = 100.493; a.Q_DA = 4.0739;
         return get_3CLJQ_integrator(a);
     }
+
+    /// Get the integrator of Vrabec, Stoll, Hasse, JPCB, 2001: https://doi.org/10.1021/jp012542o
+    auto get_Vrabec_integrator() {
+        auto a = GenericModels::TwoCLJQArgs();
+        a.l_sitesite = 2.4176; a.sigmaAA = 2.9847; a.epskBAA = 133.22; a.Q_DA = 3.7938; a.sigmaBB = a.sigmaAA; a.epskBBB = a.epskBAA;
+        return GenericModels::get_2CLJQ_integrator(a);
+    }
+
+
+    /// Parameters for the 2-site model with Lennard-Jones site-site interactions and point charges
+    struct TwoCLJCArgs {
+        double l_CO, // Angstrom
+            epskBCC, // K
+            epskBOO, // K
+            sigmaCC, // Angstrom
+            sigmaOO, // Angstrom
+            q_C,     // e
+            q_O;     // e
+    };
+
+    auto get_2CLJC_integrator(const TwoCLJCArgs& args) {
+
+        const std::vector<char> types = { 'O', 'C', 'O' };
+        // X,Y,Z coordinates, in Angstrom
+        const std::vector<std::vector<double>> coords0 = {
+            {-args.l_CO, 0, 0},
+            { 0.0000, 0, 0},
+            { args.l_CO, 0, 0},
+        };
+        using MolType = Molecule<double>;
+        MolType m0(coords0);
+        //static_assert(types.size() == coords0.size(), "types and coords0 are not the same size");
+        // sigma are in Angstrom, epsilon/kB are in K
+        // Unlike interactions are modeled with Lorentz-Berthelot mixing rules (communication with R. Fingerhut & J. Vrabec)
+        auto epskBCO = sqrt(args.epskBCC * args.epskBOO);
+        auto sigmaCO = (args.sigmaCC + args.sigmaOO) / 2;
+        // 1 e = 1.602176634e-19 C
+        // k_e = 8.9875517873681764e9 N*m^2/C^2
+        auto C_per_e = 1.602176634e-19;
+        auto k_B = 1.380649e-23; // Boltzmann constant in J/K
+        auto k_e = 8.9875517873681764e9; // Coulomb constant in N*m^2/C^2; slightly more precise value posible
+        auto charge_factor = C_per_e*C_per_e*k_e/k_B;
+        auto total_charge = args.q_C + 2 * args.q_O;
+        if (std::abs(total_charge) > 1e-10) {
+            throw std::invalid_argument("Charge does not add to zero;");
+        }
+
+        std::map<std::tuple<char, char>, std::tuple<double, double, double>> coeffs = {
+             {{'C','C'}, {args.epskBCC, args.sigmaCC, charge_factor*args.q_C*args.q_C}},
+             {{'C','O'}, {epskBCO,           sigmaCO, charge_factor*args.q_C*args.q_O}},
+             {{'O','C'}, {epskBCO,           sigmaCO, charge_factor*args.q_O*args.q_C}},
+             {{'O','O'}, {args.epskBOO, args.sigmaOO, charge_factor*args.q_O*args.q_O}},
+        };
+
+        // Connect up the lambda functions for site-site interactions
+        Integrator<double> integr(m0, m0);
+        for (auto i = 0; i < types.size(); ++i) {
+            auto chari = types[i];
+            for (auto j = 0; j < types.size(); ++j) {
+                auto charj = types[j];
+                // Collect the coefficients for the given i,j pair
+                auto [epskB_ij, sigma_ij, qiqj] = coeffs[std::make_tuple(chari, charj)];
+
+                // The lambda function that will be used to evaluate the site-site interaction
+                std::function<double(double)> f = [epskB_ij, sigma_ij, qiqj](double R_ij_A) -> double {
+
+                    auto R_ij_m = R_ij_A / 1e10; ///< center-of-mass distance, in meters
+
+                    double r6 = pow(sigma_ij / R_ij_A, 6);
+                    double valLJ = 4 * epskB_ij * (r6 * r6 - r6); // returned value in terms of V/kB, in units of K
+                    double valCharge = qiqj / R_ij_m;
+                    return valLJ + valCharge;
+                };
+                integr.get_evaluator().add_potential(i, j, f);
+            }
+        }
+        return integr;
+    }
+    
+    /// Get the integrator of Potoff and Siemann, AIChE J., 2001: https://doi.org/10.1002/aic.690470719
+    auto get_PotoffSiepmann_integrator() {
+        auto a = TwoCLJCArgs();
+        a.l_CO = 1.16; a.sigmaCC = 2.80; a.epskBCC = 27.0; a.sigmaOO = 3.05; a.epskBOO = 79.0; a.q_C = 0.70; a.q_O = -a.q_C / 2;
+        return get_2CLJC_integrator(a);
+    }
+    /// Get the integrator of Murthy, Singer, and McDonald, Mol. Phys, 1981: https://doi.org/10.1080/00268978100102331
+    auto get_Murthy_integrator() {
+        auto a = TwoCLJCArgs();
+        a.l_CO = 1.149; a.sigmaCC = 2.785; a.epskBCC = 29.0; a.sigmaOO = 3.014; a.epskBOO = 83.1; a.q_C = 0.5957; a.q_O = -a.q_C / 2;
+        return get_2CLJC_integrator(a);
+    }
+    /// Get the integrator of Harris and Yung, EPM2 model, rigid
+    auto get_HarrisYung_integrator() {
+        auto a = TwoCLJCArgs();
+        a.l_CO = 1.149; a.sigmaCC = 2.757; a.epskBCC = 28.129; a.sigmaOO = 3.033; a.epskBOO = 80.507; a.q_C = 0.6512; a.q_O = -a.q_C/2;
+        return get_2CLJC_integrator(a);
+    }
+    /// Get the integrator of Zhang and Duan, JCP, 2005: https://doi.org/10.1063/1.1924700
+    auto get_ZhangDuan_integrator() {
+        auto a = TwoCLJCArgs();
+        a.l_CO = 1.163; a.sigmaCC = 2.7918; a.epskBCC = 28.845; a.sigmaOO = 3.0; a.epskBOO = 82.656; a.q_C = 0.5888; a.q_O = -a.q_C/2;
+        return get_2CLJC_integrator(a);
+    }
+
 } /* namespace CarbonDioxide*/

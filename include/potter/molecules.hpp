@@ -502,3 +502,88 @@ auto get_rigidLJChain(int N, double r_site_site) {
     i.get_evaluator().connect_potentials(f, N);
     return i;
 }
+
+
+namespace GenericModels {
+
+    /// Parameters for the 2-site model with Lennard-Jones site-site interactions and point quadrupole
+    struct TwoCLJQArgs {
+        double l_sitesite, // Angstrom
+            epskBAA, // K
+            epskBBB, // K
+            sigmaAA, // Angstrom
+            sigmaBB, // Angstrom
+            Q_DA;    // Debye*Angstrom
+    };
+
+    auto get_2CLJQ_integrator(const TwoCLJQArgs& args) {
+
+        const std::vector<char> types = { 'A', 'B' };
+        // X,Y,Z coordinates, in Angstrom
+        const std::vector<std::vector<double>> coords0 = {
+            {-args.l_sitesite/2, 0, 0},
+            { args.l_sitesite/2, 0, 0},
+        };
+        using MolType = Molecule<double>;
+        MolType m0(coords0);
+        // sigma are in Angstrom, epsilon/kB are in K
+        // Unlike interactions are modeled with Lorentz-Berthelot mixing rules (communication with R. Fingerhut & J. Vrabec)
+        auto epskBAB = sqrt(args.epskBAA * args.epskBBB);
+        auto sigmaAB = (args.sigmaAA + args.sigmaBB) / 2;
+        std::map<std::tuple<char, char>, std::tuple<double, double>> coeffs = {
+             {{'A','A'}, {args.epskBAA, args.sigmaAA}},
+             {{'A','B'}, {epskBAB, sigmaAB}},
+             {{'B','A'}, {epskBAB, sigmaAB}},
+             {{'B','B'}, {args.epskBBB, args.sigmaBB}},
+        };
+
+        // Connect up the lambda functions for site-site interactions
+        Integrator<double> integr(m0, m0);
+        for (auto i = 0; i < types.size(); ++i) {
+            auto chari = types[i];
+            for (auto j = 0; j < types.size(); ++j) {
+                auto charj = types[j];
+                // Collect the coefficients for the given i,j pair
+                auto [epskB_ij, sigma_ij] = coeffs[std::make_tuple(chari, charj)];
+
+                // The lambda function that will be used to evaluate the site-site interaction
+                std::function<double(double)> f = [epskB_ij, sigma_ij](double R_ij) -> double {
+                    double r6 = pow(sigma_ij / R_ij, 6);
+                    double val = 4 * epskB_ij * (r6 * r6 - r6); // returned value in terms of V/kB, in units of K
+                    return val;
+                };
+                integr.get_evaluator().add_potential(i, j, f);
+            }
+        }
+        // Convert quadrupolar moment given in Debye*Angstrom to SI units of C*m^2
+        auto Q_Cm2 = 3.33564e-30 / 1e10 * args.Q_DA;
+        // Also add the point quadrupolar contribution to the potential
+        // See Stoll FPE 2001, Eq. 1
+        std::function<double(const MolType&, const MolType&)> g = [Q_Cm2](const MolType& mol1, const MolType& mol2) {
+            Eigen::ArrayXd COM1 = (mol1.get_xyz_atom(1) + mol1.get_xyz_atom(0)) / 2;
+            Eigen::ArrayXd COM2 = (mol2.get_xyz_atom(1) + mol2.get_xyz_atom(0)) / 2;
+            Eigen::Array3d rCOM = COM1 - COM2; ///< Distance vector between center-of-mass of moleccules
+            Eigen::Array3d r1 = mol1.get_xyz_atom(1) - mol1.get_xyz_atom(0); ///< Vector along the centerline of molecule 1
+            Eigen::Array3d r2 = mol2.get_xyz_atom(1) - mol2.get_xyz_atom(0); ///< Vector along the centerline of molecule 2
+            double mag1 = r1.matrix().norm(), mag2 = r2.matrix().norm(), r_ij_A = rCOM.matrix().norm();
+
+            // Reminder: A \dot B = |A||B|cos(theta), where theta is angle between them
+            double c_i = rCOM.matrix().dot(r1.matrix()) / (mag1 * r_ij_A); // cosine of angle between centerline of molecule 1 and vector between COM
+            double c_j = rCOM.matrix().dot(r2.matrix()) / (mag2 * r_ij_A); // cosine of angle between centerline of molecule 2 and vector between COM
+            double c = r1.matrix().dot(r2.matrix()) / (mag1 * mag2); // cosine of angle between centerlines of molecules 2 and 1
+
+            auto r_ij_m = r_ij_A / 1e10; ///< center-of-mass distance, in meters
+
+            // Stoll FPE 2001, Eq. 1, with a dimensionally consistent formulation in Base-SI units
+            // Converted from ESU to SI units: https://en.wikibooks.org/wiki/Molecular_Simulation/Quadrupole-Quadrupole_Interactions#Appendix
+            constexpr auto epsilon_0 = 8.8541878128e-12, ///< Vacuum permittivity, C^2/m^2/N
+                k_B = 1.380649e-23; ///< Boltzmann constant, J/K
+            // Used bracket term from mardyn: https://github.com/ls1mardyn/ls1-mardyn/blob/3febfd4635f32df6b931aceed75ce162657b1fe2/src/molecules/potforce.h#L108
+            double bracket = c - 5.0 * c_i * c_j; // Not as in in Stoll!
+            double potential = 6.0 / 8.0 * Q_Cm2 * Q_Cm2 / (4.0 * M_PI * epsilon_0 * pow(r_ij_m, 5)) * (1.0 - 5.0 * (c_i * c_i + c_j * c_j) - 15.0 * c_i * c_i * c_j * c_j + 2.0 * bracket * bracket);
+            return potential / k_B;
+        };
+        integr.get_evaluator().add_generic_contribution(g);
+        return integr;
+    }
+}

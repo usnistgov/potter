@@ -15,6 +15,15 @@ using json = nlohmann::json;
 
 double gr = (sqrt(5) + 1) / 2;
 
+auto geomspace(double xmin, double xmax, int N) {
+    std::vector<double> vec; 
+    double dT = (log(xmax) - log(xmin)) / (N - 1); 
+    for (auto i = 0; i < N; ++i) { 
+        vec.push_back(exp(log(xmin) + dT * i)); 
+    }
+    return vec;
+}
+
 auto gss(std::function<double(double)> f, double a, double b, const double tol = 1e-5) {
     /*
     Golden section search
@@ -168,11 +177,29 @@ void check_CO2_classical(const std::string& filename) {
     std::ofstream o(filename); o << std::setw(2) << json(results) << std::endl;
 }
 
-void check_CO2_Merker(const std::string& filename) {
-    auto integr = CarbonDioxide::get_Merker_integrator();
-    auto Nthreads = 6;
+void check_CO2_model(const std::string &model, const std::string& filename) {
+
+    std::map < std::string, std::function<Integrator<double>()>> factoryfunctionmap = {
+        {"Vrabec", CarbonDioxide::get_Vrabec_integrator},
+        {"Murthy", CarbonDioxide::get_Murthy_integrator},
+        {"PotoffSiepmann", CarbonDioxide::get_PotoffSiepmann_integrator},
+        {"Merker", CarbonDioxide::get_Merker_integrator},
+        {"ZhangDuan", CarbonDioxide::get_ZhangDuan_integrator},
+        {"HarrisYung", CarbonDioxide::get_HarrisYung_integrator},
+        {"Hellmann", HellmannCarbonDioxide::get_integrator}
+    };
+
+    auto integrfactory = factoryfunctionmap[model];
+    if (!integrfactory) {
+        std::cout << "Bad function: " << model << std::endl;
+        return;
+    }
+    auto integr = integrfactory();
+
+    auto Nthreads = 8;
     auto Nderiv = 3;
-    std::vector<double> Tvec = { 250,275,300,325,400,500,600,800,1000,2000,4000,6000,8000,10000 };
+    //std::vector<double> Tvec = { 250,275,300,325,400,500,600,800,1000,2000,4000,6000,8000,10000 };
+    std::vector<double> Tvec = geomspace(250, 10000, 200);
     auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
     auto i = 0;
     for (auto& val : results) {
@@ -269,7 +296,13 @@ int main() {
     //check_Singh();
     //calculate_CO2("results_CO2.json");
     //calculate_N2("results_N2.json");
-    check_CO2_Merker("results_CO2_Merker.json");
+    check_CO2_model("Vrabec", "results_CO2_VrabecStollHasse.json"); 
+    check_CO2_model("PotoffSiepmann", "results_CO2_PotoffSiepmann.json");
+    check_CO2_model("Murthy", "results_CO2_Murthy.json");
+    check_CO2_model("Hellmann", "results_CO2_Hellmann.json");
+    check_CO2_model("Merker","results_CO2_Merker.json");
+    check_CO2_model("ZhangDuan", "results_CO2_ZhangDuan.json");
+    check_CO2_model("HarrisYung", "results_CO2_HarrisYung.json");
     /*for (auto N = 1; N < 20; N *= 2){
        LJChain(N, "results" + std::to_string(N) + ".csv");
     }*/
