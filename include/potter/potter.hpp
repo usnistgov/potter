@@ -150,6 +150,9 @@ public:
         return coords.cols();
     }
     auto get_xyz_atom(const Eigen::Index i) const {
+        if (i > coords.cols()) {
+            throw std::invalid_argument("Bad atom index");
+        }
         return coords.col(i);
     }
 };
@@ -639,7 +642,7 @@ public:
             };
 
             int naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
-            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
+            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), 10000000, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
 
             // Copy into output
             // ....
