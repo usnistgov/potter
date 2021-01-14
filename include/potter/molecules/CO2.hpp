@@ -57,6 +57,9 @@ auto get_integrator() {
             // The lambda function that will be used to evaluate the site-site interaction
             // The captures are captured by copy, and "baked" into the lambda
             auto ff = [q_i, q_j, A_ij, alpha_ij, b_ij, C6_ij, C8_ij, ks, factorialks](double R_ij) -> double {
+                if (R_ij < 0.02) {
+                    return 1e30;
+                }
                 Eigen::ArrayXd rbk(ks.size());
                 for (auto i = 0; i < rbk.size(); ++i) {
                     rbk(i) = pow(R_ij*b_ij, i) / factorialks(i);
