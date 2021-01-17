@@ -1514,8 +1514,8 @@ namespace CarbonDioxide {
     }
 
 
-    /// Parameters for the 2-site model with Lennard-Jones site-site interactions and point charges
-    struct TwoCLJCArgs {
+    /// Parameters for the 3-site model with Lennard-Jones site-site interactions and point charges
+    struct ThreeCLJCArgs {
         double l_CO, // Angstrom
             epskBCC, // K
             epskBOO, // K
@@ -1525,7 +1525,7 @@ namespace CarbonDioxide {
             q_O;     // e
     };
 
-    auto get_2CLJC_integrator(const TwoCLJCArgs& args) {
+    auto get_3CLJC_integrator(const ThreeCLJCArgs& args) {
 
         const std::vector<char> types = { 'O', 'C', 'O' };
         // X,Y,Z coordinates, in Angstrom
@@ -1586,27 +1586,27 @@ namespace CarbonDioxide {
     
     /// Get the integrator of Potoff and Siemann, AIChE J., 2001: https://doi.org/10.1002/aic.690470719
     auto get_PotoffSiepmann_integrator() {
-        auto a = TwoCLJCArgs();
+        auto a = ThreeCLJCArgs();
         a.l_CO = 1.16; a.sigmaCC = 2.80; a.epskBCC = 27.0; a.sigmaOO = 3.05; a.epskBOO = 79.0; a.q_C = 0.70; a.q_O = -a.q_C / 2;
-        return get_2CLJC_integrator(a);
+        return get_3CLJC_integrator(a);
     }
     /// Get the integrator of Murthy, Singer, and McDonald, Mol. Phys, 1981: https://doi.org/10.1080/00268978100102331
     auto get_Murthy_integrator() {
-        auto a = TwoCLJCArgs();
+        auto a = ThreeCLJCArgs();
         a.l_CO = 1.149; a.sigmaCC = 2.785; a.epskBCC = 29.0; a.sigmaOO = 3.014; a.epskBOO = 83.1; a.q_C = 0.5957; a.q_O = -a.q_C / 2;
-        return get_2CLJC_integrator(a);
+        return get_3CLJC_integrator(a);
     }
     /// Get the integrator of Harris and Yung, EPM2 model, rigid
     auto get_HarrisYung_integrator() {
-        auto a = TwoCLJCArgs();
+        auto a = ThreeCLJCArgs();
         a.l_CO = 1.149; a.sigmaCC = 2.757; a.epskBCC = 28.129; a.sigmaOO = 3.033; a.epskBOO = 80.507; a.q_C = 0.6512; a.q_O = -a.q_C/2;
-        return get_2CLJC_integrator(a);
+        return get_3CLJC_integrator(a);
     }
     /// Get the integrator of Zhang and Duan, JCP, 2005: https://doi.org/10.1063/1.1924700
     auto get_ZhangDuan_integrator() {
-        auto a = TwoCLJCArgs();
+        auto a = ThreeCLJCArgs();
         a.l_CO = 1.163; a.sigmaCC = 2.7918; a.epskBCC = 28.845; a.sigmaOO = 3.0; a.epskBOO = 82.656; a.q_C = 0.5888; a.q_O = -a.q_C/2;
-        return get_2CLJC_integrator(a);
+        return get_3CLJC_integrator(a);
     }
 
 } /* namespace CarbonDioxide*/
