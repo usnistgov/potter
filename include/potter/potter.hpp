@@ -28,6 +28,39 @@ std::mutex mtx;  // mutex for cout
 constexpr auto M_PI = 3.14159265358979323846;
 #endif
 
+auto geomspace(double xmin, double xmax, int N) {
+    std::vector<double> vec;
+    double dT = (log(xmax) - log(xmin)) / (N - 1);
+    for (auto i = 0; i < N; ++i) {
+        vec.push_back(exp(log(xmin) + dT * i));
+    }
+    return vec;
+}
+
+double gr = (sqrt(5) + 1) / 2;
+
+auto gss(std::function<double(double)> f, double a, double b, const double tol = 1e-5) {
+    /*
+    Golden section search
+    C++ translation of https://en.wikipedia.org/wiki/Golden-section_search#Algorithm
+    Text is available under the Creative Commons Attribution-ShareAlike License
+    */
+    auto c = b - (b - a) / gr;
+    auto d = a + (b - a) / gr;
+    while (abs(c - d) > tol) {
+        if (f(c) < f(d)) {
+            b = d;
+        }
+        else {
+            a = c;
+        }
+        // We recompute both c and d here to avoid loss of precision which may lead to incorrect results or infinite loop
+        c = b - (b - a) / gr;
+        d = a + (b - a) / gr;
+    }
+    return std::make_tuple((b + a) / 2, f((b + a) / 2));
+}
+
 /* 
 Trapezoidal integration -- the workhorse numerical integration routine
 */

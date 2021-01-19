@@ -1609,4 +1609,107 @@ namespace CarbonDioxide {
         return get_3CLJC_integrator(a);
     }
 
+    /// Parameters for the 3-site model with EXP-6 site-site interactions and point charges
+    struct ThreeCEXP6CArgs {
+        double l_CO, // Angstrom
+            epskBCC, // K
+            epskBOO, // K
+            sigmaCC, // Angstrom
+            sigmaOO, // Angstrom
+            alphaCC, // 
+            alphaOO, // 
+            q_C,     // e
+            q_O;     // e
+    };
+
+    auto get_3CEXP6C_integrator(const ThreeCEXP6CArgs& args) {
+
+        const std::vector<char> types = { 'O', 'C', 'O' };
+        // X,Y,Z coordinates, in Angstrom
+        const std::vector<std::vector<double>> coords0 = {
+            {-args.l_CO, 0, 0},
+            { 0.0000, 0, 0},
+            { args.l_CO, 0, 0},
+        };
+        using MolType = Molecule<double>;
+        MolType m0(coords0);
+        //static_assert(types.size() == coords0.size(), "types and coords0 are not the same size");
+        // sigma are in Angstrom, epsilon/kB are in K
+        // Unlike interactions are modeled with Lorentz-Berthelot mixing rules (communication with R. Fingerhut & J. Vrabec)
+        auto epskBCO = sqrt(args.epskBCC * args.epskBOO);
+        auto sigmaCO = (args.sigmaCC + args.sigmaOO)/2;
+        auto alphaCO = sqrt(args.alphaCC * args.alphaOO);
+        // 1 e = 1.602176634e-19 C
+        // k_e = 8.9875517873681764e9 N*m^2/C^2
+        auto C_per_e = 1.602176634e-19;
+        auto k_B = 1.380649e-23; // Boltzmann constant in J/K
+        auto k_e = 8.9875517873681764e9; // Coulomb constant in N*m^2/C^2; slightly more precise value posible
+        auto charge_factor = C_per_e * C_per_e * k_e / k_B;
+        auto total_charge = args.q_C + 2 * args.q_O;
+        if (std::abs(total_charge) > 1e-10) {
+            throw std::invalid_argument("Charge does not add to zero;");
+        }
+
+        // The partial charges are in units of e, charge_factor converts to V/kB when separation is in meters
+        std::map<std::tuple<char, char>, std::tuple<double, double, double, double>> coeffs = {
+             {{'C','C'}, {args.epskBCC, args.sigmaCC, args.alphaCC, charge_factor * args.q_C * args.q_C}},
+             {{'C','O'}, {epskBCO,      sigmaCO,      alphaCO,      charge_factor * args.q_C * args.q_O}},
+             {{'O','C'}, {epskBCO,      sigmaCO,      alphaCO,      charge_factor * args.q_O * args.q_C}},
+             {{'O','O'}, {args.epskBOO, args.sigmaOO, args.alphaOO, charge_factor * args.q_O * args.q_O}},
+        };
+
+        // Connect up the lambda functions for site-site interactions
+        Integrator<double> integr(m0, m0);
+        for (auto i = 0; i < types.size(); ++i) {
+            auto chari = types[i];
+            for (auto j = 0; j < types.size(); ++j) {
+                auto charj = types[j];
+                // Collect the coefficients for the given i,j pair
+                auto [epskB_ij, sigma_ij, alpha_ij, kekBqiqj] = coeffs[std::make_tuple(chari, charj)];
+
+                // Calculate some parameters for EXP6 potential
+                //
+                // Calculate the radius where the potential is at its maximal value
+                // by golden section minimization
+                auto alpha = alphaCO;
+                auto [rstarpotmax, valpotmax] = gss([alpha](double rstar) {
+                    double pot = 1 / (1 - 6 / alpha) * (6 / alpha * exp(alpha * (1 - rstar)) - pow(rstar, -6));
+                    return -pot;
+                    }, 0.1, 1, 1e-10);
+                valpotmax *= -1;
+
+                // Calculate the value of sigma^* for the given value of alpha, either r_m or sigma can be defined,
+                // they are linearly related to each other.  Here sigma is specified, and we need to obtain r_m from
+                // sigma
+
+                auto sigma_star = 0.8891039655264765; // non-dimensional, function of alpha, given by sigma^* = sigma/r_m, where sigma is the value of r giving potential of zero value
+
+                auto R_min_ij_A = sigma_ij / sigma_star;
+
+                // The lambda function that will be used to evaluate the site-site interaction
+                std::function<double(double)> f = [epskB_ij, R_min_ij_A, alpha_ij, kekBqiqj, rstarpotmax, valpotmax](double R_ij_A) -> double {
+
+                    auto R_ij_m = R_ij_A / 1e10; ///< site-site distance, in meters
+
+                    double rstar = R_ij_A / R_min_ij_A; ///< reduced site-site distance
+                    double valEXP6 = (rstar > rstarpotmax) ? epskB_ij/(1-6/alpha_ij)*(6/alpha_ij*exp(alpha_ij*(1-rstar)) - pow(rstar, -6)) : valpotmax; // returned value in terms of V/kB, in units of K
+    
+                    double valCharge = kekBqiqj / R_ij_m;
+                    return valEXP6 + valCharge;
+                };
+                integr.get_evaluator().add_potential(i, j, f);
+            }
+        }
+        return integr;
+    }
+    /// Get the integrator of Errington, Thesis.  Cornell University
+    /// Also see: J. J. POTOFF , J. R. ERRINGTON & A. Z. PANAGIOTOPOULOS (1999)
+    /// Molecular simulation of phase equilibria for mixtures of polar and non - polar components, Molecular
+    ///    Physics, 97:10, 1073 - 1083, DOI : 10.1080/00268979909482908
+    auto get_Errington_integrator() {
+        auto a = ThreeCEXP6CArgs();
+        a.l_CO = 1.1433; a.alphaCC = 14; a.epskBCC = 29.07; a.sigmaCC = 2.753; a.alphaOO = 14; a.sigmaOO = 3.029; a.epskBOO = 83.20; a.q_C = 0.6466; a.q_O = -a.q_C / 2;
+        return get_3CEXP6C_integrator(a);
+    }
+
 } /* namespace CarbonDioxide*/

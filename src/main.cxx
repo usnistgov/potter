@@ -13,39 +13,6 @@
 // for convenience
 using json = nlohmann::json;
 
-double gr = (sqrt(5) + 1) / 2;
-
-auto geomspace(double xmin, double xmax, int N) {
-    std::vector<double> vec; 
-    double dT = (log(xmax) - log(xmin)) / (N - 1); 
-    for (auto i = 0; i < N; ++i) { 
-        vec.push_back(exp(log(xmin) + dT * i)); 
-    }
-    return vec;
-}
-
-auto gss(std::function<double(double)> f, double a, double b, const double tol = 1e-5) {
-    /*
-    Golden section search
-    Translation of https://en.wikipedia.org/wiki/Golden-section_search#Algorithm
-    Text is available under the Creative Commons Attribution-ShareAlike License
-    */
-    auto c = b - (b - a) / gr;
-    auto d = a + (b - a) / gr;
-    while (abs(c - d) > tol) {
-        if (f(c) < f(d)) {
-            b = d;
-        }
-        else {
-            a = c;
-        }
-        // We recompute both c and d here to avoid loss of precision which may lead to incorrect results or infinite loop
-        c = b - (b - a) / gr;
-        d = a + (b - a) / gr;
-    }
-    return std::make_tuple((b + a) / 2, f((b+a)/2));
-}
-
 void check_EXP6(int order, double alpha, const std::string &filename) {
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
@@ -180,6 +147,7 @@ void check_CO2_classical(const std::string& filename) {
 void check_CO2_model(const std::string &model, const std::string& filename) {
 
     std::map < std::string, std::function<Integrator<double>()>> factoryfunctionmap = {
+        {"Errington", CarbonDioxide::get_Errington_integrator},
         {"Vrabec", CarbonDioxide::get_Vrabec_integrator},
         {"Murthy", CarbonDioxide::get_Murthy_integrator},
         {"PotoffSiepmann", CarbonDioxide::get_PotoffSiepmann_integrator},
@@ -296,6 +264,7 @@ int main() {
     //check_Singh();
     //calculate_CO2("results_CO2.json");
     //calculate_N2("results_N2.json");
+    check_CO2_model("Errington", "results_CO2_Errington.json");
     check_CO2_model("Vrabec", "results_CO2_VrabecStollHasse.json"); 
     check_CO2_model("PotoffSiepmann", "results_CO2_PotoffSiepmann.json");
     check_CO2_model("Murthy", "results_CO2_Murthy.json");
