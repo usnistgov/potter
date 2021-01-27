@@ -18,6 +18,8 @@
 #endif
 #include "MultiComplex/MultiComplex.hpp"
 
+#include "nlohmann/json.hpp"
+
 double factorial(double n) {
     return std::tgamma(n + 1);
 }
@@ -463,12 +465,18 @@ template<typename TYPE>
 class Integrator {
 private:
     std::unique_ptr<ThreadPool> m_pool;
+    nlohmann::json m_conf;
+
 public:
     using EColArray = Eigen::Array<TYPE, Eigen::Dynamic, 1>;
     const Molecule<TYPE> mol1, mol2;
     PotentialEvaluator<TYPE> potcls;
 
     Integrator(const Molecule<TYPE>& mol1, const Molecule<TYPE>& mol2) : mol1(mol1), mol2(mol2) {};
+
+    auto& get_conf_view() {
+        return m_conf;
+    }
 
     /* For a one-dimensional integration for B_2, use trapezoidal integration to calculate B_2 */
     template <typename TEMPTYPE>
@@ -603,6 +611,14 @@ public:
         outval = std::valarray<double>(0.0, ndim);
         outerr = std::valarray<double>(0.0, ndim);
 
+        int feval_max = 0;
+        if (m_conf.contains("feval_max")) {
+            feval_max = static_cast<int>(m_conf["feval_max"]);
+        }
+        else {
+            throw std::invalid_argument("Key \"feval_max\" must be specified in the configuration JSON");
+        }
+
 #if !defined(NO_CUBA)
         auto Cuba_integrand = [](const int *pndim, const cubareal x[], const int *pncomp, cubareal fval[], void *p_shared_data) {
             auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
@@ -631,7 +647,7 @@ public:
         int VERBOSE = 0;
         int LAST = 4;
         int MINEVAL = 0;
-        int MAXEVAL = 5000000;
+        int MAXEVAL = feval_max;
         int NSTART = 1000;
         int NINCREASE = 500;
         int NBATCH = 1000;
@@ -675,7 +691,7 @@ public:
             };
 
             int naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
-            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), 10000000, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
+            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
 
             // Copy into output
             // ....
@@ -695,10 +711,9 @@ public:
             };
 
             int naxes = 3; // How many dimensions the integral is taken over (r12, r13, eta)
-            int Ncallmax = static_cast<int>(1e6);
             for (auto i = 0; i < xmins.size(); ++i){
                 
-                hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[i][0]), &(xmaxs[i][0]), Ncallmax, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[i][0]), &(errs[i][0]));
+                hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[i][0]), &(xmaxs[i][0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[i][0]), &(errs[i][0]));
 
                 // Copy into output
                 outval += vals[i]; outerr += std::abs(errs[i]);
@@ -735,12 +750,11 @@ public:
 			std::valarray<double> pre_factors = {-3.0*(27.0/4.0), 3.0*(27.0/2.0), -27.0/(8.0*M_PI)};
 
 			int naxes = 5; // How many dimensions the integral is taken over (r14, r13, gamma, r12, eta)
-            int Nstepmax = static_cast<int>(1e8);
-			hcubature(ndim, cubature_integrand_1, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), Nstepmax, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
-			hcubature(ndim, cubature_integrand_2, &shared, naxes, &(xmins[1][0]), &(xmaxs[1][0]), Nstepmax, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[1][0]), &(errs[1][0]));
+			hcubature(ndim, cubature_integrand_1, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
+			hcubature(ndim, cubature_integrand_2, &shared, naxes, &(xmins[1][0]), &(xmaxs[1][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[1][0]), &(errs[1][0]));
 
 			naxes = 6;
-			hcubature(ndim, cubature_integrand_3, &shared, naxes, &(xmins[2][0]), &(xmaxs[2][0]), Nstepmax, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[2][0]), &(errs[2][0]));
+			hcubature(ndim, cubature_integrand_3, &shared, naxes, &(xmins[2][0]), &(xmaxs[2][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[2][0]), &(errs[2][0]));
 
 			for (auto i = 0; i < pre_factors.size(); ++i) {
                 vals[i] *= pre_factors[i];

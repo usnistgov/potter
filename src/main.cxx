@@ -164,6 +164,9 @@ void check_CO2_model(const std::string &model, const std::string& filename) {
     }
     auto integr = integrfactory();
 
+    auto& conf = integr.get_conf_view();
+    conf["feval_max"] = 1e7;
+
     auto Nthreads = 8;
     auto Nderiv = 3;
     //std::vector<double> Tvec = { 250,275,300,325,400,500,600,800,1000,2000,4000,6000,8000,10000 };

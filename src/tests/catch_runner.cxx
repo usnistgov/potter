@@ -22,9 +22,10 @@ TEST_CASE("Check N_2 values", "[B_2],[N2]") {
 }
 
 TEST_CASE("Check CO2 values", "[B_2],[CO2]") {
-    auto pot = CarbonDioxide::get_integrator();
+    auto pot = HellmannCarbonDioxide::get_integrator();
+    pot.get_conf_view()["feval_max"] = 1e7;
     SECTION("Check potential evaluation") {
-        for (auto row : CarbonDioxide::potential_validdata()) {
+        for (auto row : HellmannCarbonDioxide::potential_validdata()) {
             auto actual = row.V12BkB_K;
             auto check = pot.potential(row.r_A, row.theta1_deg/180*M_PI, row.theta2_deg/180*M_PI, row.phi_deg/180*M_PI);
             CAPTURE(row.r_A);
@@ -35,7 +36,7 @@ TEST_CASE("Check CO2 values", "[B_2],[CO2]") {
         }
     }
     SECTION("Check classical second virials") {
-        for (auto row : CarbonDioxide::check_B2cl_vals()) {
+        for (auto row : HellmannCarbonDioxide::check_B2cl_vals()) {
             auto actual = row.B2cl_cm3mol;
             auto rmin_A = 2.0;
             auto B = pot.B_and_derivs(2, 1, row.T_K, rmin_A, 100, pot.mol1, pot.mol2)["B"];
@@ -50,6 +51,7 @@ TEST_CASE("Check B_2 values against Singh&Kofke values", "[B_2]") {
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
     Integrator<double> i(m0, m1);
+    i.get_conf_view()["feval_max"] = 1e6;
     std::function<double(double)> f([](double r) {
         double rn6 = 1/(r*r*r*r*r*r); return 4.0 * (rn6*rn6 - rn6); }
     );
@@ -78,6 +80,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
     Integrator<double> i(m0, m1);
+    i.get_conf_view()["feval_max"] = 1e7;
     std::function<double(double)> f([](double r) {
         double rn6 = 1/(r*r*r*r*r*r); return 4.0*(rn6*rn6 - rn6); }
     );
@@ -106,6 +109,7 @@ TEST_CASE("Check B_4 values against Singh&Kofke values", "[B_4]") {
 	std::vector<std::vector<double>> coords0 = { {0,0,0} };
 	Molecule<double> m0(coords0), m1(coords0);
 	Integrator<double> i(m0, m1);
+    i.get_conf_view()["feval_max"] = 1e7;
 	std::function<double(double)> f([](double r) {
 		double rn6 = 1 / (r*r*r*r*r*r); return 4.0*(rn6*rn6 - rn6); }
 	);
