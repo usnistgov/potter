@@ -172,8 +172,8 @@ void check_CO2_model(const std::string &model, const std::string& filename) {
     auto i = 0;
     for (auto& val : results) {
         val["B"] += 2 * M_PI / 3 * 8;
-        val["B / m^3/mol"] = val["B"] * (6.02214086e23 / 1e24);
-        val["B / L/mol"] = val["B / m^3/mol"]/1000;
+        val["B / m^3/mol"] = val["B"] * (6.02214086e23 / 1e30);
+        val["B / L/mol"] = val["B / m^3/mol"]*1000;
         auto B = val["B"];
         auto dBdT = val["dBdT"];
         auto d2BdT2 = (val.count("d2BdT2") > 0) ? val["d2BdT2"] : -1e30;
