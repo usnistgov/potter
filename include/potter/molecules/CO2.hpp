@@ -1499,7 +1499,7 @@ namespace CarbonDioxide {
         return integr;
     }
 
-    /// Get the integrator of Merker
+    /// Get the integrator of Merker, JCP, 2010: https://doi.org/10.1063/1.3434530
     auto get_Merker_integrator() {
         auto a = ThreeCLJQArgs();
         a.l_CO = 1.2869; a.sigmaCC = 2.8137; a.epskBCC = 12.3724; a.sigmaOO = 2.9755; a.epskBOO = 100.493; a.Q_DA = 4.0739;
@@ -1510,6 +1510,14 @@ namespace CarbonDioxide {
     auto get_Vrabec_integrator() {
         auto a = GenericModels::TwoCLJQArgs();
         a.l_sitesite = 2.4176; a.sigmaAA = 2.9847; a.epskBAA = 133.22; a.Q_DA = 3.7938; a.sigmaBB = a.sigmaAA; a.epskBBB = a.epskBAA;
+        return GenericModels::get_2CLJQ_integrator(a);
+    }
+
+    /// Get the integrator of Moeller and Fischer, FPE, 1994: https://doi.org/10.1016/0378-3812(94)80002-2
+    auto get_Moeller_integrator() {
+        auto a = GenericModels::TwoCLJQArgs();
+        auto Q_DA = -12.2e-40 / 3.33564e-30 * 1e10; // C*m^2 / (C*m/D) * (A/m) // This quantity turns into -3.6574690314302503
+        a.l_sitesite = 0.699*3.0354; a.sigmaAA = 3.0354; a.epskBAA = 125.317; a.Q_DA = Q_DA; a.sigmaBB = a.sigmaAA; a.epskBBB = a.epskBAA;
         return GenericModels::get_2CLJQ_integrator(a);
     }
 
@@ -1596,7 +1604,7 @@ namespace CarbonDioxide {
         a.l_CO = 1.149; a.sigmaCC = 2.785; a.epskBCC = 29.0; a.sigmaOO = 3.014; a.epskBOO = 83.1; a.q_C = 0.5957; a.q_O = -a.q_C / 2;
         return get_3CLJC_integrator(a);
     }
-    /// Get the integrator of Harris and Yung, EPM2 model, rigid
+    /// Get the integrator of Harris and Yung, EPM2 model, rigid: https://pubs.acs.org/doi/pdf/10.1021/j100031a034
     auto get_HarrisYung_integrator() {
         auto a = ThreeCLJCArgs();
         a.l_CO = 1.149; a.sigmaCC = 2.757; a.epskBCC = 28.129; a.sigmaOO = 3.033; a.epskBOO = 80.507; a.q_C = 0.6512; a.q_O = -a.q_C/2;
@@ -1702,7 +1710,7 @@ namespace CarbonDioxide {
         }
         return integr;
     }
-    /// Get the integrator of Errington, Thesis.  Cornell University
+    /// Get the integrator of Errington, Thesis,  Cornell University, 1999
     /// Also see: J. J. POTOFF , J. R. ERRINGTON & A. Z. PANAGIOTOPOULOS (1999)
     /// Molecular simulation of phase equilibria for mixtures of polar and non - polar components, Molecular
     ///    Physics, 97:10, 1073 - 1083, DOI : 10.1080/00268979909482908
