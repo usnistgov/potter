@@ -150,6 +150,7 @@ void check_CO2_model(const std::string &model, const std::string& filename) {
         {"Errington", CarbonDioxide::get_Errington_integrator},
         {"Vrabec", CarbonDioxide::get_Vrabec_integrator},
         {"Murthy", CarbonDioxide::get_Murthy_integrator},
+        {"Moeller", CarbonDioxide::get_Moeller_integrator},
         {"PotoffSiepmann", CarbonDioxide::get_PotoffSiepmann_integrator},
         {"Merker", CarbonDioxide::get_Merker_integrator},
         {"ZhangDuan", CarbonDioxide::get_ZhangDuan_integrator},
@@ -175,6 +176,7 @@ void check_CO2_model(const std::string &model, const std::string& filename) {
     auto i = 0;
     for (auto& val : results) {
         val["B"] += 2 * M_PI / 3 * 8;
+        val["B / A^3/entity"] = val["B"];
         val["B / m^3/mol"] = val["B"] * (6.02214086e23 / 1e30);
         val["B / L/mol"] = val["B / m^3/mol"]*1000;
         auto B = val["B"];
@@ -267,14 +269,15 @@ int main() {
     //check_Singh();
     //calculate_CO2("results_CO2.json");
     //calculate_N2("results_N2.json");
-    check_CO2_model("Errington", "results_CO2_Errington.json");
-    check_CO2_model("Vrabec", "results_CO2_VrabecStollHasse.json"); 
-    check_CO2_model("PotoffSiepmann", "results_CO2_PotoffSiepmann.json");
-    check_CO2_model("Murthy", "results_CO2_Murthy.json");
-    check_CO2_model("Hellmann", "results_CO2_Hellmann.json");
-    check_CO2_model("Merker","results_CO2_Merker.json");
-    check_CO2_model("ZhangDuan", "results_CO2_ZhangDuan.json");
-    check_CO2_model("HarrisYung", "results_CO2_HarrisYung.json");
+    //check_CO2_model("Errington", "results_CO2_Errington.json");
+    //check_CO2_model("Vrabec", "results_CO2_VrabecStollHasse.json"); 
+    //check_CO2_model("PotoffSiepmann", "results_CO2_PotoffSiepmann.json");
+    //check_CO2_model("Murthy", "results_CO2_Murthy.json");
+    check_CO2_model("Moeller", "results_CO2_Moeller.json");
+    //check_CO2_model("Hellmann", "results_CO2_Hellmann.json");
+    //check_CO2_model("Merker","results_CO2_Merker.json");
+    //check_CO2_model("ZhangDuan", "results_CO2_ZhangDuan.json");
+    //check_CO2_model("HarrisYung", "results_CO2_HarrisYung.json");
     /*for (auto N = 1; N < 20; N *= 2){
        LJChain(N, "results" + std::to_string(N) + ".csv");
     }*/
