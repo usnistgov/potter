@@ -495,6 +495,9 @@ auto get_rigidLJChain(int N, double r_site_site) {
     Molecule<double> molA(coords0), molB(coords0);
     Integrator<double> i(molA, molB);
 
+    auto& conf = i.get_conf_view();
+    conf["feval_max"] = 1e7;
+
     auto ff = [](double r) {
         double rn6 = 1 / (r * r * r * r * r * r); return 4.0 * (rn6 * rn6 - rn6);
     };

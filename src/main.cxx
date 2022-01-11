@@ -206,8 +206,8 @@ void calculate_CO2(const std::string& filename) {
     // write JSON of results to output file
     std::ofstream o(filename); o << std::setw(2) << json(results) << std::endl;
 }
-void LJChain(int N, const std::string &filename) {
-    auto i = get_rigidLJChain(N, 1.0);
+void LJChain(int N, double lsigma, const std::string &filename) {
+    auto i = get_rigidLJChain(N, lsigma);
     std::ofstream ofs(filename);
     ofs << "T^*,N,B^*,dB^*/dT^*,d2B^*/dT^*2,neff,esterr(neff),elapsed / s" << std::endl;
     auto Nthreads = 6; // Could be more depending on machine...
@@ -273,12 +273,15 @@ int main() {
     //check_CO2_model("Vrabec", "results_CO2_VrabecStollHasse.json"); 
     //check_CO2_model("PotoffSiepmann", "results_CO2_PotoffSiepmann.json");
     //check_CO2_model("Murthy", "results_CO2_Murthy.json");
-    check_CO2_model("Moeller", "results_CO2_Moeller.json");
+    //check_CO2_model("Moeller", "results_CO2_Moeller.json");
     //check_CO2_model("Hellmann", "results_CO2_Hellmann.json");
     //check_CO2_model("Merker","results_CO2_Merker.json");
     //check_CO2_model("ZhangDuan", "results_CO2_ZhangDuan.json");
     //check_CO2_model("HarrisYung", "results_CO2_HarrisYung.json");
-    /*for (auto N = 1; N < 20; N *= 2){
-       LJChain(N, "results" + std::to_string(N) + ".csv");
-    }*/
+
+    for (auto N = 2; N <= 2; N *= 2){
+        for (auto lsigma = 0.2; lsigma < 1; lsigma += 0.2) {
+            LJChain(N, lsigma, "results" + std::to_string(N) + "_lsigma" + std::to_string(lsigma) + ".csv");
+        }
+    }
 }
