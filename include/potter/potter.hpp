@@ -469,10 +469,13 @@ private:
 
 public:
     using EColArray = Eigen::Array<TYPE, Eigen::Dynamic, 1>;
-    const Molecule<TYPE> mol1, mol2;
+    std::vector<Molecule<TYPE>> mol_sys;
+    Molecule<TYPE> &mol1, &mol2;
     PotentialEvaluator<TYPE> potcls;
 
-    Integrator(const Molecule<TYPE>& mol1, const Molecule<TYPE>& mol2) : mol1(mol1), mol2(mol2) {};
+    Integrator(const Molecule<TYPE>& mol1, const Molecule<TYPE>& mol2) : mol_sys({mol1, mol2}), mol1(mol_sys[0]) ,  mol2(mol_sys[1]) {};
+    Integrator(const std::vector<Molecule<TYPE>>& mol_sys) : mol_sys(mol_sys) { if(mol_sys.size() < 2) {throw std::invalid_argument("Mol system length must be at least 2!") }
+    mol1 = mol_sys[0]; mol2 = mol_sys[1];};
 
     auto& get_conf_view() {
         return m_conf;
