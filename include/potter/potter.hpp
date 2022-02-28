@@ -266,16 +266,26 @@ class SharedDataBase {
 public:
     TEMPTYPE Tstar;
     TYPE rstar;
-    Molecule<TYPE> molA, molB;
+    std::vector<Molecule<TYPE>> mol_sys;
+    Molecule<TYPE> &molA, &molB;
     std::valarray<TYPE> xmin, xmax;
     const PotentialEvaluator<TYPE>& evaltr;
     SharedDataBase(TEMPTYPE Tstar, TYPE rstar,
-        Molecule<TYPE> molA, Molecule<TYPE> molB, 
+        const Molecule<TYPE>& molA, const Molecule<TYPE>& molB, 
         const PotentialEvaluator<TYPE>& evaltr, 
-        const std::valarray<TYPE>& xmin = {},
-        const std::valarray<TYPE>& xmax = {}
+        std::valarray<TYPE> xmin = {},
+        std::valarray<TYPE> xmax = {}
     )
-        : Tstar(Tstar), rstar(rstar), molA(molA), molB(molB), evaltr(evaltr), xmin(xmin), xmax(xmax) {};
+        : Tstar(Tstar), rstar(rstar), mol_sys({ molA, molB }), molA(mol_sys[0]), molB(mol_sys[1]), evaltr(evaltr), xmin(xmin), xmax(xmax) {};
+    SharedDataBase(TEMPTYPE Tstar, TYPE rstar,
+        const std::vector<Molecule<TYPE>>& mol_sys,
+        const PotentialEvaluator<TYPE>& evaltr,
+        std::valarray<TYPE> xmin = {},
+        std::valarray<TYPE> xmax = {}
+    )
+        : Tstar(Tstar), rstar(rstar), mol_sys(mol_sys), evaltr(evaltr), xmin(xmin), xmax(xmax) {
+        if (mol_sys.size() < 2) { throw std::invalid_argument("Mol system length must be at least 2!")} molA = mol_sys[0]; molB = mol_sys[1];
+        };
 
     TYPE eval_pot(const Molecule<TYPE>& molA, const Molecule<TYPE>& molB) {
         return evaltr.eval_pot(molA, molB);
