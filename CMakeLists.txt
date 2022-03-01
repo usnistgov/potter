@@ -54,7 +54,7 @@ target_include_directories(cuba-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern
 add_executable(catchtest "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/catch_runner.cxx")
 add_cubature(catchtest)
 if (NOT MSVC)
-target_link_libraries(cuba-test PRIVATE "cuba")
+target_link_libraries(catchtest PRIVATE "cuba")
 endif()
 
 macro(add_nix_libraries target)
