@@ -177,6 +177,14 @@ public:
     void translatey(TYPE dy) {
         coords.row(1) += dy;
     }
+
+    void translate_3D(TYPE r, TYPE phi, TYPE theta) {
+        TYPE p = sin(theta);
+        coords.row(0) += r * p * cos(phi);
+        coords.row(1) += r * p * sin(phi);
+        coords.row(2) += r * cos(theta);
+    }
+
     template<typename ArrayType>
     TYPE get_dist(const ArrayType&rA, const ArrayType&rB) const{
         return sqrt((rA - rB).square().sum());
@@ -266,16 +274,30 @@ class SharedDataBase {
 public:
     TEMPTYPE Tstar;
     TYPE rstar;
+    std::vector<Molecule<TYPE>> mol_sys;
     Molecule<TYPE> molA, molB;
-    std::valarray<TYPE> xmin, xmax;
+    const std::vector<std::valarray<TYPE>> xmin, xmax;
     const PotentialEvaluator<TYPE>& evaltr;
     SharedDataBase(TEMPTYPE Tstar, TYPE rstar,
-        Molecule<TYPE> molA, Molecule<TYPE> molB, 
+        const Molecule<TYPE>& molA, const Molecule<TYPE>& molB, 
         const PotentialEvaluator<TYPE>& evaltr, 
-        const std::valarray<TYPE>& xmin = {},
-        const std::valarray<TYPE>& xmax = {}
+        const std::vector<std::valarray<TYPE>>& xmin = {},
+        const std::vector<std::valarray<TYPE>>& xmax = {}
     )
-        : Tstar(Tstar), rstar(rstar), molA(molA), molB(molB), evaltr(evaltr), xmin(xmin), xmax(xmax) {};
+        : Tstar(Tstar), rstar(rstar), mol_sys({ molA, molB }), molA(mol_sys[0]), molB(mol_sys[1]), evaltr(evaltr), xmin(xmin), xmax(xmax) {};
+    SharedDataBase(TEMPTYPE Tstar, TYPE rstar,
+        const std::vector<Molecule<TYPE>>& mol_sys,
+        const PotentialEvaluator<TYPE>& evaltr,
+        const std::vector<std::valarray<TYPE>>& xmin = {},
+        const std::vector<std::valarray<TYPE>>& xmax = {}
+    )
+        : Tstar(Tstar), rstar(rstar), mol_sys(mol_sys), molA(get_mol(mol_sys,0)), molB(get_mol(mol_sys,1)) , evaltr(evaltr), xmin(xmin), xmax(xmax) {};
+    
+    template<typename MolSys> 
+    auto get_mol(const MolSys& mol_sys, size_t i) {
+        if (mol_sys.size() < 2) {throw std::invalid_argument("Mol system length must be at least 2!");}
+        return mol_sys[i];
+    };
 
     TYPE eval_pot(const Molecule<TYPE>& molA, const Molecule<TYPE>& molB) {
         return evaltr.eval_pot(molA, molB);
@@ -316,6 +338,50 @@ public:
             }
         }
     }
+    void orient_integrand_3D(double theta_1_o, double r_12, double theta_2_o, double phi_2_o, double r_13, double theta_3, double phi_3, double theta_3_o, double phi_3_o, double* fval) {
+
+        mol_sys[0].reset(); // Back to COM at origin
+        mol_sys[1].reset();
+        mol_sys[2].reset();
+
+        // Rotate molecule #1
+        mol_sys[0].rotate_negativey(theta_1_o); // First rotate around -y axis
+
+        // Rotate molecule #2
+        mol_sys[1].rotate_negativey(theta_2_o); // First rotate around -y axis
+        mol_sys[1].rotate_negativex(phi_2_o);   // Then rotate around +x
+        mol_sys[1].translatex(r_12);            // Then translate
+
+        // Rotate molecule #2
+        mol_sys[2].rotate_negativey(theta_3_o); // First rotate around -y axis
+        mol_sys[2].rotate_negativex(phi_3_o);   // Then rotate around +x
+        mol_sys[2].translate_3D(r_13, phi_3, theta_3); // Then translate
+
+        // Evaluate the potential for 
+        auto V12 = eval_pot(mol_sys[0], mol_sys[1]);
+        auto V13 = eval_pot(mol_sys[0], mol_sys[2]);
+        auto V23 = eval_pot(mol_sys[1], mol_sys[2]);
+        auto SQUARE = [](double x) { return x * x; };
+        auto a = sin(theta_1_o)*sin(theta_2_o)*sin(theta_3_o)*sin(theta_3)*(exp(-V12 / Tstar) - 1.0) * (exp(-V13 / Tstar) - 1.0) * (exp(-V23 / Tstar) - 1.0) * SQUARE(r_12) * SQUARE(r_13);
+
+        
+            if constexpr (std::is_same<decltype(Tstar), double>::value) {
+            // If T is double (real)
+            fval[0] = a;
+        }
+        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+            // If T is a complex number (perhaps for complex step derivatives)
+            fval[0] = a.real();
+            fval[1] = a.imag();
+        }
+        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+            // If T is a multicomplex number
+            auto& c = a.get_coef();
+            for (auto i = 0; i < c.size(); ++i) {
+                fval[i] = c[i];
+            }
+        }
+    }
     /*
     Given the separations and angle, calculate the integrand for B_3 for a spherically-symmetric potential
     for an atomic fluid
@@ -349,116 +415,116 @@ public:
     }
 
 
-	/*
-	Given the separations and angles, calculate the integrand for B4_1 for a spherically-symmetric potential
-	for an atomic fluid
-	*/
-	void atomic_B4_1_integrand(const double r14, const double r13, const double gamma_angle, const double r12, const double eta_angle, double* fval)
-	{
-		// Get the potential function V(r) that we should use
-		auto &pot = this->evaltr.get_potential(0, 0);
-		TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
-		auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r) / Tstar); };
-		auto SQUARE = [](double x) { return x * x; };
-		auto sq_r12 = SQUARE(r12);
-		auto sq_r13 = SQUARE(r13);
-		auto sq_r14 = SQUARE(r14);
-		auto rangle_12_13 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*eta_angle);
-		auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gamma_angle);
+    /*
+    Given the separations and angles, calculate the integrand for B4_1 for a spherically-symmetric potential
+    for an atomic fluid
+    */
+    void atomic_B4_1_integrand(const double r14, const double r13, const double gamma_angle, const double r12, const double eta_angle, double* fval)
+    {
+        // Get the potential function V(r) that we should use
+        auto &pot = this->evaltr.get_potential(0, 0);
+        TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
+        auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r) / Tstar); };
+        auto SQUARE = [](double x) { return x * x; };
+        auto sq_r12 = SQUARE(r12);
+        auto sq_r13 = SQUARE(r13);
+        auto sq_r14 = SQUARE(r14);
+        auto rangle_12_13 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*eta_angle);
+        auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gamma_angle);
 
-		auto a = sq_r12 * f(r12)*sq_r13*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14);
+        auto a = sq_r12 * f(r12)*sq_r13*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14);
 
-		if constexpr (std::is_same<decltype(Tstar), double>::value) {
-			// If T is double (real)
-			fval[0] = a;
-		}
-		else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-			// If T is a complex number (perhaps for complex step derivatives)
-			fval[0] = a.real();
-			fval[1] = a.imag();
-		}
-		else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-			// If T is a multicomplex number
-			auto& c = a.get_coef();
-			for (auto i = 0; i < c.size(); ++i) {
-				fval[i] = c[i];
-			}
-		}
-	}
+        if constexpr (std::is_same<decltype(Tstar), double>::value) {
+            // If T is double (real)
+            fval[0] = a;
+        }
+        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+            // If T is a complex number (perhaps for complex step derivatives)
+            fval[0] = a.real();
+            fval[1] = a.imag();
+        }
+        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+            // If T is a multicomplex number
+            auto& c = a.get_coef();
+            for (auto i = 0; i < c.size(); ++i) {
+                fval[i] = c[i];
+            }
+        }
+    }
 
-	/*
+    /*
 Given the separations and angles, calculate the integrand for B4_2 for a spherically-symmetric potential
 for an atomic fluid
 */
-	void atomic_B4_2_integrand(const double eta_angle, const double r12, const double r13, const double gamma_angle, const double r14, double* fval)
-	{
-		// Get the potential function V(r) that we should use
-		auto &pot = this->evaltr.get_potential(0, 0);
-		TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
-		auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r) / Tstar); };
-		auto SQUARE = [](double x) { return x * x; };
-		auto sq_r12 = SQUARE(r12);
-		auto sq_r13 = SQUARE(r13);
-		auto sq_r14 = SQUARE(r14);
-		auto rangle_12_13 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*eta_angle);
-		auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gamma_angle);
+    void atomic_B4_2_integrand(const double eta_angle, const double r12, const double r13, const double gamma_angle, const double r14, double* fval)
+    {
+        // Get the potential function V(r) that we should use
+        auto &pot = this->evaltr.get_potential(0, 0);
+        TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
+        auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r) / Tstar); };
+        auto SQUARE = [](double x) { return x * x; };
+        auto sq_r12 = SQUARE(r12);
+        auto sq_r13 = SQUARE(r13);
+        auto sq_r14 = SQUARE(r14);
+        auto rangle_12_13 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*eta_angle);
+        auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gamma_angle);
 
-		auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14);
+        auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14);
 
-		if constexpr (std::is_same<decltype(Tstar), double>::value) {
-			// If T is double (real)
-			fval[0] = a;
-		}
-		else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-			// If T is a complex number (perhaps for complex step derivatives)
-			fval[0] = a.real();
-			fval[1] = a.imag();
-		}
-		else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-			// If T is a multicomplex number
-			auto& c = a.get_coef();
-			for (auto i = 0; i < c.size(); ++i) {
-				fval[i] = c[i];
-			}
-		}
-	}
+        if constexpr (std::is_same<decltype(Tstar), double>::value) {
+            // If T is double (real)
+            fval[0] = a;
+        }
+        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+            // If T is a complex number (perhaps for complex step derivatives)
+            fval[0] = a.real();
+            fval[1] = a.imag();
+        }
+        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+            // If T is a multicomplex number
+            auto& c = a.get_coef();
+            for (auto i = 0; i < c.size(); ++i) {
+                fval[i] = c[i];
+            }
+        }
+    }
 
-	/*
+    /*
 Given the separations and angles, calculate the integrand for B4_3 for a spherically-symmetric potential
 for an atomic fluid
 */
-	void atomic_B4_3_integrand(const double eta_angle, const double zeta_angle, const double gamma_angle, const double r12, const double r13, const double r14, double* fval)
-	{
-		// Get the potential function V(r) that we should use
-		auto &pot = this->evaltr.get_potential(0, 0);
-		TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
-		auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r) / Tstar); };
-		auto SQUARE = [](double x) { return x * x; };
-		auto sq_r12 = SQUARE(r12);
-		auto sq_r13 = SQUARE(r13);
-		auto sq_r14 = SQUARE(r14);
-		auto rangle_12_13 = sqrt(sq_r12 + sq_r14 - 2 * r12*r14*eta_angle);
-		auto rangle_13_14 = sqrt(sq_r13 + sq_r14 - 2 * r13*r14*gamma_angle);
-		auto rangle_12_14 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*(eta_angle * gamma_angle + sqrt(1.0 - SQUARE(eta_angle))*sqrt(1.0 - SQUARE(gamma_angle))*cos(zeta_angle)));
-		auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14)*f(rangle_12_14);
+    void atomic_B4_3_integrand(const double eta_angle, const double zeta_angle, const double gamma_angle, const double r12, const double r13, const double r14, double* fval)
+    {
+        // Get the potential function V(r) that we should use
+        auto &pot = this->evaltr.get_potential(0, 0);
+        TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
+        auto f = [pot, Tstar](double r) -> TEMPTYPE { return 1.0 - exp(-pot(r) / Tstar); };
+        auto SQUARE = [](double x) { return x * x; };
+        auto sq_r12 = SQUARE(r12);
+        auto sq_r13 = SQUARE(r13);
+        auto sq_r14 = SQUARE(r14);
+        auto rangle_12_13 = sqrt(sq_r12 + sq_r14 - 2 * r12*r14*eta_angle);
+        auto rangle_13_14 = sqrt(sq_r13 + sq_r14 - 2 * r13*r14*gamma_angle);
+        auto rangle_12_14 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*(eta_angle * gamma_angle + sqrt(1.0 - SQUARE(eta_angle))*sqrt(1.0 - SQUARE(gamma_angle))*cos(zeta_angle)));
+        auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14)*f(rangle_12_14);
 
-		if constexpr (std::is_same<decltype(Tstar), double>::value) {
-			// If T is double (real)
-			fval[0] = a;
-		}
-		else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-			// If T is a complex number (perhaps for complex step derivatives)
-			fval[0] = a.real();
-			fval[1] = a.imag();
-		}
-		else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-			// If T is a multicomplex number
-			auto& c = a.get_coef();
-			for (auto i = 0; i < c.size(); ++i) {
-				fval[i] = c[i];
-			}
-		}
-	}
+        if constexpr (std::is_same<decltype(Tstar), double>::value) {
+            // If T is double (real)
+            fval[0] = a;
+        }
+        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+            // If T is a complex number (perhaps for complex step derivatives)
+            fval[0] = a.real();
+            fval[1] = a.imag();
+        }
+        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+            // If T is a multicomplex number
+            auto& c = a.get_coef();
+            for (auto i = 0; i < c.size(); ++i) {
+                fval[i] = c[i];
+            }
+        }
+    }
 };
 
 template<typename TYPE>
@@ -469,10 +535,18 @@ private:
 
 public:
     using EColArray = Eigen::Array<TYPE, Eigen::Dynamic, 1>;
-    const Molecule<TYPE> mol1, mol2;
+    std::vector<Molecule<TYPE>> mol_sys;
+    Molecule<TYPE> &mol1, &mol2;
     PotentialEvaluator<TYPE> potcls;
 
-    Integrator(const Molecule<TYPE>& mol1, const Molecule<TYPE>& mol2) : mol1(mol1), mol2(mol2) {};
+    Integrator(const Molecule<TYPE>& mol1, const Molecule<TYPE>& mol2) : mol_sys({mol1, mol2}), mol1(mol_sys[0]) ,  mol2(mol_sys[1]) {};
+    Integrator(const std::vector<Molecule<TYPE>>& mol_sys) : mol_sys(mol_sys) , mol1(get_mol(this->mol_sys,0)) , mol2(get_mol(this->mol_sys,1)) {};
+    
+    template<typename MolSys> 
+    auto& get_mol(MolSys& mol_sys, size_t i) {
+        if (mol_sys.size() < 2) {throw std::invalid_argument("Mol system length must be at least 2!");}
+        return mol_sys[i];
+    };
 
     auto& get_conf_view() {
         return m_conf;
@@ -575,14 +649,20 @@ public:
             xmins = {{ 0, 0, 0, rstart }}, xmaxs = {{ M_PI, M_PI, 2 * M_PI, rend }}; // Limits on theta1, theta2, phi, r
             break;
         case 3:{
+            // Check if three particles are given or not (if not proceed with atmoic b_3_integrand)
             double rbreak = 1.3;
-            xmins = {{ rstart, rstart, -1 },{ rbreak, rstart, -1 } }, xmaxs = {{ rbreak, rend, 1 },{ rend, rend, 1 } }; // Limits on r12, r13, eta
+            if (mol_sys.size() < 3)
+                xmins = { { rstart, rstart, -1 },{ rbreak, rstart, -1 } }, xmaxs = { { rbreak, rend, 1 },{ rend, rend, 1 } }; // Limits on r12, r13, eta
+            else
+            {    
+                xmins = { { 0 ,rstart,0,0,rstart,0,0,0,0 } }, xmaxs = { {  M_PI  , rend ,  M_PI , 2 * M_PI , rend , M_PI , 2 * M_PI ,  M_PI , 2 * M_PI } };
+            }
             break;
             }
         case 4: {
             // Limits on r14, r13, gamma, r12, eta
             // Limits on eta, r12, r13, eta, r14
-            // Limits on eta,zeta,gamma, r12, r13, r14	
+            // Limits on eta,zeta,gamma, r12, r13, r14    
             xmins = { {rstart, rstart, -1 , rstart, -1 }, { -1, rstart, rstart, -1 , rstart }, { -1,  rstart, -1 , rstart, rstart , rstart } };
             xmaxs = { { rend, rend, 1 , rend, 1 }, { 1, rend, rend, 1 , rend }, { 1, 2 * M_PI, 1, rend, rend , rend } };
             break; 
@@ -590,7 +670,7 @@ public:
         default:
             break;
         }
-        SharedData shared(Tstar, 0.0, mol1, mol2, potcls);
+        SharedData shared(Tstar, 0.0, mol_sys, potcls, xmins, xmaxs);
         
         int ndim = 1; // If T is a floating point number (default)
         std::valarray<double> outval, outerr;
@@ -620,19 +700,22 @@ public:
         }
 
 #if !defined(NO_CUBA)
+        switch (order) {
+        case 2:
+        {
         auto Cuba_integrand = [](const int *pndim, const cubareal x[], const int *pncomp, cubareal fval[], void *p_shared_data) {
             auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
             
             double theta1, theta2, phi, r;
             double jacobian = 1.0;
             for (auto i  = 0; i < *pndim; ++i){
-                auto range = shared.xmax[i] - shared.xmin[i];
+                auto range = shared.xmax[0][i] - shared.xmin[0][i];
                 jacobian *= range;
             }
-            theta1 = shared.xmin[0] + x[0]*(shared.xmax[0]-shared.xmin[0]);
-            theta2 = shared.xmin[1] + x[1]*(shared.xmax[1]-shared.xmin[1]);
-            phi =    shared.xmin[2] + x[2]*(shared.xmax[2]-shared.xmin[2]);
-            r   =    shared.xmin[3] + x[3]*(shared.xmax[3]-shared.xmin[3]);
+            theta1 = shared.xmin[0][0] + x[0] * (shared.xmax[0][0] - shared.xmin[0][0]);
+            theta2 = shared.xmin[0][1] + x[1] * (shared.xmax[0][1] - shared.xmin[0][1]);
+            phi = shared.xmin[0][2] + x[2] * (shared.xmax[0][2] - shared.xmin[0][2]);
+            r = shared.xmin[0][3] + x[3] * (shared.xmax[0][3] - shared.xmin[0][3]);
             shared.rstar = r;
             shared.orient_integrand(theta1, theta2, phi, fval);
             for (auto i = 0; i < *pncomp; ++i){
@@ -642,8 +725,8 @@ public:
         };
         
         int NVEC = 1;
-        int EPSREL = 1e-8;
-        int EPSABS = 1e-12;
+        cubareal EPSREL = 1e-8;
+        cubareal EPSABS = 1e-12;
         int VERBOSE = 0;
         int LAST = 4;
         int MINEVAL = 0;
@@ -652,19 +735,17 @@ public:
         int NINCREASE = 500;
         int NBATCH = 1000;
         int GRIDNO = 0;
-        const char *STATEFILE = nullptr;
-        void *SPIN = nullptr;
+        int SEED   = 0;
+        const char* STATEFILE = nullptr;
+        void* SPIN = nullptr;
         int neval, fail;
         cubareal integral[ndim], error[ndim], prob[ndim];
-
-        int nregions;
-        int KEY = 0;
         auto startTimeC = std::chrono::high_resolution_clock::now();
-        Cuhre(4, ndim, Cuba_integrand, &shared, NVEC,
-        EPSREL, EPSABS, VERBOSE | LAST,
-        MINEVAL, MAXEVAL, KEY,
-        STATEFILE, SPIN,
-        &nregions, &neval, &fail, integral, error, prob);
+          Vegas(4, ndim, Cuba_integrand, &shared, NVEC,
+            EPSREL, EPSABS, VERBOSE, SEED,
+            MINEVAL, MAXEVAL, NSTART, NINCREASE, NBATCH,
+            GRIDNO, STATEFILE, SPIN,
+            &neval, &fail, integral, error, prob);
         auto endTimeC = std::chrono::high_resolution_clock::now();
         auto timeC = std::chrono::duration<double>(endTimeC - startTimeC).count(); 
 
@@ -673,6 +754,103 @@ public:
         for (auto i = 0; i < outval.size(); ++i) {
             outval[i] = -0.25 * integral[i];
             outerr[i] = -0.25 * error[i];
+        }
+        break;
+        }
+        case 3:
+        {
+        
+        if(mol_sys.size() < 3) {throw std::invalid_argument("For B3 calculation, 3 molecules are needed!");}
+
+            // third virial coefficient with cuba lib
+            auto Cuba_integrand_3D = [](const int* pndim, const cubareal x[], const int* pncomp, cubareal fval[], void* p_shared_data) {
+            auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                
+            // particle one is at origin
+            // particle 1 orientation
+            double theta_1_o = x[0];
+            
+            // particle 2 location
+            double r_12 = x[1];
+
+            // particle 2 orientation
+            double theta_2_o = x[2]; double phi_2_o = x[3];
+
+            // particle 3 location
+            double r_13 = x[4];
+            double theta_3 = x[5]; double phi_3 = x[6];
+
+            // particle 3 orientation
+            double theta_3_o = x[7]; double phi_3_o = x[8];
+
+            double jacobian = 1.0;
+            for (auto i = 0; i < *pndim; ++i) {
+                auto range = shared.xmax[0][i] - shared.xmin[0][i];
+                jacobian *= range;
+            }
+
+            double theta_1_o_sc = shared.xmin[0][0] + x[0] * (shared.xmax[0][0] - shared.xmin[0][0]);
+            double r_12_sc      = shared.xmin[0][1] + x[1] * (shared.xmax[0][1] - shared.xmin[0][1]);
+            double theta_2_o_sc = shared.xmin[0][2] + x[2] * (shared.xmax[0][2] - shared.xmin[0][2]);
+            double phi_2_o_sc   = shared.xmin[0][3] + x[3] * (shared.xmax[0][3] - shared.xmin[0][3]);
+            double r_13_sc      = shared.xmin[0][4] + x[4] * (shared.xmax[0][4] - shared.xmin[0][4]);
+            double theta_3_sc   = shared.xmin[0][5] + x[5] * (shared.xmax[0][5] - shared.xmin[0][5]);
+            double phi_3_sc     = shared.xmin[0][6] + x[6] * (shared.xmax[0][6] - shared.xmin[0][6]);
+            double theta_3_o_sc = shared.xmin[0][7] + x[7] * (shared.xmax[0][7] - shared.xmin[0][7]);
+            double phi_3_o_sc   = shared.xmin[0][8] + x[8] * (shared.xmax[0][8] - shared.xmin[0][8]);
+        
+            shared.orient_integrand_3D(theta_1_o_sc, r_12_sc, theta_2_o_sc, phi_2_o_sc, r_13_sc, theta_3_sc, phi_3_sc, theta_3_o_sc, phi_3_o_sc, fval);
+
+            for (auto i = 0; i < *pncomp; ++i) {
+                fval[i] *= jacobian;
+            }
+            return 0;
+        };
+
+        int NVEC = 1;
+        cubareal EPSREL = 1e-8;
+        cubareal EPSABS = 1e-12;
+        int VERBOSE = 0;
+        int LAST = 4;
+        int MINEVAL = 0;
+        int MAXEVAL = feval_max;
+        int NSTART = 1000;
+        int NINCREASE = 500;
+        int NBATCH = 1000;
+        int GRIDNO = 0;
+        int SEED   = 0;
+        int NNEW   = 100;
+        int NMIN   = 100;
+        const char* STATEFILE = nullptr;
+        void* SPIN = nullptr;
+        int neval, fail;
+        cubareal integral[ndim], error[ndim], prob[ndim];
+        auto startTimeC = std::chrono::high_resolution_clock::now();
+          Vegas(9, ndim, Cuba_integrand_3D, &shared, NVEC,
+            EPSREL, EPSABS, VERBOSE, SEED,
+            MINEVAL, MAXEVAL, NSTART, NINCREASE, NBATCH,
+            GRIDNO, STATEFILE, SPIN,
+            &neval, &fail, integral, error, prob);
+
+        auto endTimeC = std::chrono::high_resolution_clock::now();
+        auto timeC = std::chrono::duration<double>(endTimeC - startTimeC).count();
+
+        double fac = -1.0/3.0 * (pow(2.0,3.0) * pow(M_PI,2.0))/(pow(4.0*M_PI,3.0));
+
+        auto test = fac*integral[0];
+        auto err = fac*error[0];
+        
+        std::cout << test << std::endl;
+        std::cout << err << std::endl;
+
+        for (auto i = 0; i < outval.size(); ++i) {
+            outval[i] = fac * integral[i];
+            outerr[i] = fac * error[i];
+        }
+        break;
+        }
+        default:
+            throw - 1;
         }
 #else
         // Use cubature to do the integration...
@@ -723,50 +901,50 @@ public:
             
             break;
         }
-		case 4:
-		{
-			// Fourth virial coefficient: three parts B_4_1,B_4_2,B_4_3
-			// The integrand functions
-			//typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
-			auto cubature_integrand_1 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-				auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
-				shared.atomic_B4_1_integrand(x[0], x[1], x[2], x[3], x[4], fval);
-				return 0; // success
-			};
+        case 4:
+        {
+            // Fourth virial coefficient: three parts B_4_1,B_4_2,B_4_3
+            // The integrand functions
+            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
+            auto cubature_integrand_1 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                shared.atomic_B4_1_integrand(x[0], x[1], x[2], x[3], x[4], fval);
+                return 0; // success
+            };
 
-			auto cubature_integrand_2 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-				auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
-				shared.atomic_B4_2_integrand(x[0], x[1], x[2], x[3], x[4], fval);
-				return 0; // success
-			};
+            auto cubature_integrand_2 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                shared.atomic_B4_2_integrand(x[0], x[1], x[2], x[3], x[4], fval);
+                return 0; // success
+            };
 
-			auto cubature_integrand_3 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-				auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
-				shared.atomic_B4_3_integrand(x[0], x[1], x[2], x[3], x[4], x[5], fval);
-				return 0; // success
-			};
+            auto cubature_integrand_3 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                shared.atomic_B4_3_integrand(x[0], x[1], x[2], x[3], x[4], x[5], fval);
+                return 0; // success
+            };
 
-			// prefactors for each contribution 
-			std::valarray<double> pre_factors = {-3.0*(27.0/4.0), 3.0*(27.0/2.0), -27.0/(8.0*M_PI)};
+            // prefactors for each contribution 
+            std::valarray<double> pre_factors = {-3.0*(27.0/4.0), 3.0*(27.0/2.0), -27.0/(8.0*M_PI)};
 
-			int naxes = 5; // How many dimensions the integral is taken over (r14, r13, gamma, r12, eta)
-			hcubature(ndim, cubature_integrand_1, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
-			hcubature(ndim, cubature_integrand_2, &shared, naxes, &(xmins[1][0]), &(xmaxs[1][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[1][0]), &(errs[1][0]));
+            int naxes = 5; // How many dimensions the integral is taken over (r14, r13, gamma, r12, eta)
+            hcubature(ndim, cubature_integrand_1, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
+            hcubature(ndim, cubature_integrand_2, &shared, naxes, &(xmins[1][0]), &(xmaxs[1][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[1][0]), &(errs[1][0]));
 
-			naxes = 6;
-			hcubature(ndim, cubature_integrand_3, &shared, naxes, &(xmins[2][0]), &(xmaxs[2][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[2][0]), &(errs[2][0]));
+            naxes = 6;
+            hcubature(ndim, cubature_integrand_3, &shared, naxes, &(xmins[2][0]), &(xmaxs[2][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[2][0]), &(errs[2][0]));
 
-			for (auto i = 0; i < pre_factors.size(); ++i) {
+            for (auto i = 0; i < pre_factors.size(); ++i) {
                 vals[i] *= pre_factors[i];
                 errs[i] *= pre_factors[i];
-			}
+            }
 
             // Copy into output
-			outval = vals[0] + vals[1] + vals[2];
-			outerr = std::abs(errs[0]) + std::abs(errs[1]) + std::abs(errs[2]);
+            outval = vals[0] + vals[1] + vals[2];
+            outerr = std::abs(errs[0]) + std::abs(errs[1]) + std::abs(errs[2]);
 
-			break;
-		}
+            break;
+        }
         default:
             throw -1;
         }
