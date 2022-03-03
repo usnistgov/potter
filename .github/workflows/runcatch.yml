@@ -16,7 +16,7 @@ jobs:
     - name: cmake config
       run: cd build && cmake .. -DCMAKE_BUILD_TYPE=Release
     - name: cmake make
-      run: cmake --build build --target catchtests
+      run: cmake --build build --target catchtest
     - name: run Catch tests
-      run: ./catchtests
+      run: ./catchtest
 
