@@ -18,5 +18,5 @@ jobs:
     - name: cmake make
       run: cmake --build build --target catchtest
     - name: run Catch tests
-      run: ./catchtest
+      run: build/catchtest
 
