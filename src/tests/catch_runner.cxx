@@ -1,4 +1,5 @@
 #define CATCH_CONFIG_MAIN
+#define CATCH_CONFIG_ENABLE_BENCHMARKING
 #include "catch/catch.hpp"
 
 #include "potter/potter.hpp"
@@ -136,3 +137,35 @@ TEST_CASE("Check B_4 values against Singh&Kofke values", "[B_4]") {
 		CHECK(std::abs(B4 - B4_SK) < B4err_SK * 2);
 	}
 } 
+
+TEST_CASE("Benchmark transformations","[bench]") {
+    auto integr = get_rigidLJChain(7, 1.0);
+    auto molA = integr.mol1, molB = integr.mol2;
+
+    BENCHMARK("reset") {
+        molA.reset();
+        return molA;
+    };
+    BENCHMARK("reset+translate") {
+        molA.reset();
+        molA.translatex(1);
+        return molA;
+    };
+    BENCHMARK("reset+rotate+translate") {
+        molA.reset();
+        molA.rotate_plusy(1.3);
+        molA.translatex(1);
+        return molA;
+    };
+    BENCHMARK("reset+rotate+translate+potential") {
+        molA.reset();
+        molA.rotate_plusy(1.3);
+        molA.rotate_negativex(1.3);
+        molA.translatex(1);
+
+        molB.reset();
+        molB.rotate_plusy(1.3);
+
+        return integr.get_evaluator().eval_pot(molA, molB);
+    };
+}
