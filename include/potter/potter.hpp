@@ -814,9 +814,9 @@ public:
         int LAST = 4;
         int MINEVAL = 0;
         int MAXEVAL = feval_max;
-        int NSTART = 1000;
-        int NINCREASE = 500;
-        int NBATCH = 1000;
+        int NSTART = 10000;
+        int NINCREASE = 5000;
+        int NBATCH = 10000;
         int GRIDNO = 0;
         int SEED   = 0;
         int NNEW   = 100;

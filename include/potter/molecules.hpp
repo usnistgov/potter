@@ -506,6 +506,32 @@ auto get_rigidLJChain(int N, double r_site_site) {
     return i;
 }
 
+auto get_rigidMieChain(int N, double N_exp, double r_site_site, int sys_size) {
+    std::vector<std::vector<double>> coords0;
+
+    // Sites of the chain are laid out along the x axis, with the COM at the origin
+    for (auto x : r_site_site*(Eigen::ArrayXd::LinSpaced(N, 0, N - 1) - (N - 1) / 2.0)) {
+        coords0.push_back({ x, 0, 0 });
+    }
+
+    std::vector<Molecule<double>> mol_sys;
+    for (size_t i = 0; i < sys_size; i++)
+    {
+        Molecule<double> mol(coords0);
+        mol_sys.push_back(mol);
+    }
+
+    Integrator<double> i(mol_sys);
+    double factor = N_exp / (N_exp - 6) * pow(N_exp / 6, 6 / (N_exp - 6));
+    auto ff = [N_exp, factor](double r) {
+        double rnN = 1 / pow(r,N_exp); 
+        double rn6 = 1 / pow(r,6); 
+        return factor * (rnN - rn6);
+    };
+    std::function<double(double)> f(ff);
+    i.get_evaluator().connect_potentials(f, N);
+    return i;
+}
 
 namespace GenericModels {
 

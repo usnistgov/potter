@@ -169,3 +169,17 @@ TEST_CASE("Benchmark transformations","[bench]") {
         return integr.get_evaluator().eval_pot(molA, molB);
     };
 }
+
+// doi: 10.1039/B302780E
+TEST_CASE("Check B3 value against MacDowell et al for 2 center LJF") {
+    auto i = get_rigidMieChain(2, 12, 0.6 , 3);
+    i.get_conf_view()["feval_max"] = 100000000;
+    auto Nthreads = 1; 
+    auto Nderiv = 0;
+    std::vector<double> T = { 2.59147 };
+    std::vector<double> B3_Lit = {8.54};
+    std::vector<double> standarderr = {0.01};
+    auto val = i.B_and_derivs(3, Nderiv, T[0] , 0.0001, 150 , i.mol1, i.mol2);
+    auto B3 = val["B"];
+    CHECK(std::abs(B3-B3_Lit[0]) < standarderr[0]*2);
+}
