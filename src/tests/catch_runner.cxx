@@ -16,14 +16,14 @@ TEST_CASE("Check N_2 values", "[B_2],[N2]") {
             CAPTURE(row.theta1_deg);
             CAPTURE(row.theta2_deg);
             CAPTURE(row.phi_deg);
-            CHECK(std::abs(actual - check) < std::abs(actual) * 0.01);
+            CHECK(std::abs(actual - check) < 0.001);
         }
     }
 }
 
 TEST_CASE("Check CO2 values", "[B_2],[CO2]") {
     auto pot = HellmannCarbonDioxide::get_integrator();
-    pot.get_conf_view()["feval_max"] = 1e7;
+    pot.get_conf_view()["feval_max"] = 1e5;
     SECTION("Check potential evaluation") {
         for (auto row : HellmannCarbonDioxide::potential_validdata()) {
             auto actual = row.V12BkB_K;
@@ -32,16 +32,20 @@ TEST_CASE("Check CO2 values", "[B_2],[CO2]") {
             CAPTURE(row.theta1_deg);
             CAPTURE(row.theta2_deg);
             CAPTURE(row.phi_deg);
-            CHECK(std::abs(actual - check) < std::abs(actual) * 0.01);
+            CHECK(std::abs(actual - check) < 0.001);
         }
     }
     SECTION("Check classical second virials") {
+        int i = 0;
         for (auto row : HellmannCarbonDioxide::check_B2cl_vals()) {
-            auto actual = row.B2cl_cm3mol;
-            auto rmin_A = 2.0;
-            auto B = pot.B_and_derivs(2, 1, row.T_K, rmin_A, 100, pot.mol1, pot.mol2)["B"];
-            auto check = (B + 2*M_PI/3*pow(rmin_A, 3)) * 6.02214086e23 / 1e24 ; // cm^3/mol
-            CHECK(std::abs(actual - check) < std::abs(actual) * 0.01);
+            if (i % 10 == 0 && row.T_K > 600) {
+                auto actual = row.B2cl_cm3mol;
+                auto rmin_A = 2.0;
+                auto B = pot.B_and_derivs(2, 1, row.T_K, rmin_A, 100, pot.mol1, pot.mol2)["B"];
+                auto check = (B + 2 * M_PI / 3 * pow(rmin_A, 3)) * 6.02214086e23 / 1e24; // cm^3/mol
+                CHECK(std::abs(actual - check) < std::abs(actual) * 0.01);
+            }
+            i += 1;
         }
     }
 }
