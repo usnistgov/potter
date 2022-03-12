@@ -6,6 +6,30 @@
 #include "potter/molecules.hpp"
 #include "potter/molecules/CO2.hpp"
 #include "potter/correlations.hpp"
+#include "potter/integration.hpp"
+
+TEST_CASE("Basic integration problems", "[integration]") {
+    potter::integrand_function f = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) -> int{
+        fval[0] = sin(x[0]) * cos(x[1]) * exp(x[2]);
+        return 0;
+    };
+
+    SECTION("hcubature") {
+        std::valarray<double> xmins = { 0,0,0 }, xmaxs = { 1,1,1 };
+
+        struct Shared { 
+            double c = 10.0;
+        } shared;
+        potter::c_integrand_function g = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) -> int {
+            auto& shared = *((struct Shared*)(p_shared_data));
+            fval[0] = shared.c * sin(x[0]) * cos(x[1]) * exp(x[2]);
+            return 0;
+        };
+        auto [val, err] = potter::HCubature<double>(g, &shared, xmins, xmaxs, potter::get_HCubature_defaults());
+        auto exact = shared.c*0.664669679781377;
+        CHECK(exact == Approx(val).margin(2 * err));
+    }
+}
 
 TEST_CASE("Check N_2 values", "[B_2],[N2]") {
     auto pot = get_nitrogen();
