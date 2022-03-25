@@ -43,7 +43,8 @@ auto get_nitrogen() {
 
             // Collect the coefficients for the given i,j pair
             auto typetup = std::make_tuple(std::min(chari, charj), std::max(chari, charj));
-            auto [A_ij, alpha_ij, b_ij, C6_ij] = coeffs[typetup];
+            double A_ij, alpha_ij, b_ij, C6_ij;
+            std::tie(A_ij, alpha_ij, b_ij, C6_ij) = coeffs[typetup];
 
             // Pre-calculate some things so they need not be calculated in the potential function
             Eigen::ArrayXi ks = Eigen::ArrayXi::LinSpaced(7, 0, 6); // 0,...,6
@@ -573,7 +574,8 @@ namespace GenericModels {
             for (auto j = 0; j < types.size(); ++j) {
                 auto charj = types[j];
                 // Collect the coefficients for the given i,j pair
-                auto [epskB_ij, sigma_ij] = coeffs[std::make_tuple(chari, charj)];
+                double epskB_ij, sigma_ij;
+                std::tie(epskB_ij, sigma_ij) = coeffs[std::make_tuple(chari, charj)];
 
                 // The lambda function that will be used to evaluate the site-site interaction
                 std::function<double(double)> f = [epskB_ij, sigma_ij](double R_ij) -> double {
