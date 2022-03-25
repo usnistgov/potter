@@ -48,7 +48,8 @@ auto get_integrator() {
 
             // Collect the coefficients for the given i,j pair
             auto typetup = std::make_tuple(std::min(chari, charj), std::max(chari, charj));
-            auto [A_ij, alpha_ij, b_ij, C6_ij, C8_ij] = coeffs[typetup];
+            double A_ij, alpha_ij, b_ij, C6_ij, C8_ij; 
+            std::tie(A_ij, alpha_ij, b_ij, C6_ij, C8_ij) = coeffs[typetup];
 
             // Pre-calculate some things so they need not be calculated in the potential function
             Eigen::ArrayXi ks = Eigen::ArrayXi::LinSpaced(9, 0, 8); // 0,...,7
@@ -1458,7 +1459,8 @@ namespace CarbonDioxide {
             for (auto j = 0; j < types.size(); ++j) {
                 auto charj = types[j];
                 // Collect the coefficients for the given i,j pair
-                auto [epskB_ij, sigma_ij] = coeffs[std::make_tuple(chari, charj)];
+                double epskB_ij, sigma_ij; 
+                std::tie(epskB_ij, sigma_ij) = coeffs[std::make_tuple(chari, charj)];
 
                 // The lambda function that will be used to evaluate the site-site interaction
                 std::function<double(double)> f = [epskB_ij, sigma_ij](double R_ij) -> double {
@@ -1574,7 +1576,8 @@ namespace CarbonDioxide {
             for (auto j = 0; j < types.size(); ++j) {
                 auto charj = types[j];
                 // Collect the coefficients for the given i,j pair
-                auto [epskB_ij, sigma_ij, qiqj] = coeffs[std::make_tuple(chari, charj)];
+                double epskB_ij, sigma_ij, qiqj;
+                std::tie(epskB_ij, sigma_ij, qiqj) = coeffs[std::make_tuple(chari, charj)];
 
                 // The lambda function that will be used to evaluate the site-site interaction
                 std::function<double(double)> f = [epskB_ij, sigma_ij, qiqj](double R_ij_A) -> double {
@@ -1673,14 +1676,16 @@ namespace CarbonDioxide {
             for (auto j = 0; j < types.size(); ++j) {
                 auto charj = types[j];
                 // Collect the coefficients for the given i,j pair
-                auto [epskB_ij, sigma_ij, alpha_ij, kekBqiqj] = coeffs[std::make_tuple(chari, charj)];
+                double epskB_ij, sigma_ij, alpha_ij, kekBqiqj;
+                std::tie(epskB_ij, sigma_ij, alpha_ij, kekBqiqj) = coeffs[std::make_tuple(chari, charj)];
 
                 // Calculate some parameters for EXP6 potential
                 //
                 // Calculate the radius where the potential is at its maximal value
                 // by golden section minimization
                 auto alpha = alphaCO;
-                auto [rstarpotmax, valpotmax] = gss([alpha](double rstar) {
+                double rstarpotmax, valpotmax; 
+                std::tie(rstarpotmax, valpotmax) = gss([alpha](double rstar) {
                     double pot = 1 / (1 - 6 / alpha) * (6 / alpha * exp(alpha * (1 - rstar)) - pow(rstar, -6));
                     return -pot;
                     }, 0.1, 1, 1e-10);
