@@ -110,6 +110,63 @@ TEST_CASE("Benchmark basic integration problems", "[integration]") {
         auto [val, err] = potter::HCubature<OutputType>(r, 0, xmins, xmaxs, potter::get_HCubature_defaults());
         return val[0];
     };
+
+#if defined(ENABLE_CUBA)
+    potter::CubaIntegrandWrapper<decltype(g)> ciw(g, xmins, xmaxs);
+
+    BENCHMARK("VEGAS") {
+        auto r = ciw.ptr();
+        auto opt = potter::get_VEGAS_defaults();
+        opt["MAXEVAL"] = 100;
+        int shared = 0;
+        auto [val, err] = potter::VEGAS<OutputType>(r, &shared, opt);
+        return val[0];
+    };
+#endif
+}
+
+TEST_CASE("Benchmark basic integration problems cuba", "[Cuba]") {
+
+    using OutputType = std::valarray<cubareal>;
+    std::valarray<double> xmins = { 0,0,0 }, xmaxs = { 1,1,1 };
+    struct Shared { double c = 10.0; } shared;
+
+    // The standard approach of casting the shared data (dangerous, and inconvenient)
+    potter::c_integrand_function f = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) -> int {
+        auto& shared = *((struct Shared*)(p_shared_data));
+        fval[0] = shared.c * sin(x[0]) * cos(x[1]) * exp(x[2]);
+        return 0;
+    };
+
+    class Shared2 {
+    public:
+        double c;
+        int g(unsigned ndim, const double* x, void*, unsigned fdim, double* fval) {
+            fval[0] = c * sin(x[0]) * cos(x[1]) * exp(x[2]);
+            return 0;
+        };
+    };
+    Shared2 shared2;
+
+    potter::IntegrandType::func = std::bind(&Shared2::g, &shared2, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5);
+    potter::c_integrand_function func2 = static_cast<potter::c_integrand_function>(potter::IntegrandType::callback);
+
+    auto g = [&shared](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) -> int {
+        fval[0] = shared.c * sin(x[0]) * cos(x[1]) * exp(x[2]);
+        return 0;
+    };
+    
+#if defined(ENABLE_CUBA)
+    potter::CubaIntegrandWrapper<decltype(g)> ciw(g, xmins, xmaxs);
+
+    BENCHMARK("VEGAS") {
+        auto r = ciw.ptr();
+        auto opt = potter::get_VEGAS_defaults();
+        opt["MAXEVAL"] = 100;
+        auto [val, err] = potter::VEGAS<OutputType>(r, 0, opt);
+        return val[0];
+    };
+#endif
 }
 
 TEST_CASE("Check N_2 values", "[B_2],[N2]") {

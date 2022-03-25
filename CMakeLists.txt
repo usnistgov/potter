@@ -18,6 +18,7 @@ if (NOT MSVC)
     endif()
     link_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
     include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
+    add_definitions(-DENABLE_CUBA)
 else()
     # With MSVC, can't use Cuba, and use cubature instead
     add_definitions("-DNO_CUBA") 
