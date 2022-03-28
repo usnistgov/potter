@@ -22,7 +22,8 @@ void check_EXP6(int order, double alpha, const std::string &filename) {
 
     // Calculate the radius where the potential is at its maximal value
     // by golden section minimization
-    auto [rstarpotmax, valpotmax] = gss([alpha](double rstar) {
+    double rstarpotmax, valpotmax;
+    std::tie(rstarpotmax, valpotmax) = gss([alpha](double rstar) {
         double pot = 1 / (1 - 6 / alpha) * (6 / alpha * exp(alpha * (1 - rstar)) - pow(rstar, -6));;
         return -pot;
         }, 0.1, 1, 1e-10);
