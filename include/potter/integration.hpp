@@ -30,17 +30,11 @@ namespace potter {
 
     //------------------------------------------------------------------------------------------------------------------
     //------------------------------------------------------------------------------------------------------------------
-
     
     // The C definition of the integrand function that is used everywhere
     typedef int (*c_integrand_function) (unsigned ndim, const double *x, void *shared_data, unsigned fdim, double* fval);
 
     using IntegrandType = potter::Callback<int(unsigned, const double*, void*, unsigned, double*)>;
-    
-    // The C definition of the Cuba integrand function
-    typedef int (*c_Cuba_integrand_function)(const int *ndim, const double x[], const int *ncomp, double f[], void *userdata);
-
-    using CubaIntegrandType = potter::Callback<int(const int *, const double [], const int *, double [], void *)>;
 
     template <typename Function>
     struct IntegrandWrapper {
@@ -57,38 +51,19 @@ namespace potter {
         }
     };
 
-#if defined(ENABLE_CUBA)
-    template <typename Function>
-    struct CubaIntegrandWrapper {
-        Function f;
-        const Eigen::ArrayXd xmins, xmaxs;
+    struct CubaCallArgs{
+        c_integrand_function func;
+        void *userdata;
+        const std::valarray<double> &xmins, &xmaxs;
         double Jacobian;
-
-        // No copies allowed
-        CubaIntegrandWrapper(const CubaIntegrandWrapper&) = delete;
-
-        /**
-         * Note: the integrand function is the standard function that takes x and y in their ranges [a,b]
-         */
-        CubaIntegrandWrapper(const Function& f, const std::valarray<double> &xmins, const std::valarray<double> &xmaxs) : f(f), 
-            xmins(Eigen::Map<const Eigen::ArrayXd>(&(xmins[0]), xmins.size())), 
-            xmaxs(Eigen::Map<const Eigen::ArrayXd>(&(xmaxs[0]), xmaxs.size())), 
-            Jacobian(1.0/(this->xmaxs-this->xmins).prod()) { };
-
-        // Arguments to this function are as expected by Cuba's C interface
-        int call(const int *ndim, const double x[], const int *fdim, double fval[], void *userdata) {
-            Eigen::Map<const Eigen::ArrayXd> xmapped(&(x[0]), *ndim);
-            // Scale x into the full range
-            Eigen::ArrayXd xscaled = xmins + xmapped*xmaxs;
-            // Call our standard function, then normalize by Jacobian values
-            return f(*ndim, &(xscaled[0]), userdata, *fdim, fval)/Jacobian;
-        }
-        c_Cuba_integrand_function ptr() {
-            potter::CubaIntegrandType::func = std::bind(&CubaIntegrandWrapper<Function>::call, &(*this), std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5);
-            return static_cast<potter::c_Cuba_integrand_function>(potter::CubaIntegrandType::callback);
+        
+        CubaCallArgs(c_integrand_function func, void *userdata, const std::valarray<double> &xmins, const std::valarray<double> &xmaxs) 
+        : func(func), userdata(userdata), xmins(xmins), xmaxs(xmaxs) {
+            Eigen::Map<const Eigen::ArrayXd> xmins_(&(xmins[0]), xmins.size());
+            Eigen::Map<const Eigen::ArrayXd> xmaxs_(&(xmaxs[0]), xmaxs.size());    
+            Jacobian = 1.0/(xmaxs_-xmins_).prod();
         }
     };
-#endif
 
     template<typename T>
     T value_or(const nlohmann::json& j, const std::string& k, const T &def) { return (j.contains(k)) ? j[k].get<T>() : def; };
@@ -144,11 +119,11 @@ namespace potter {
     }
 
     template<typename OutputType>
-    auto VEGAS(c_Cuba_integrand_function &integrand, void* shared, const nlohmann::json &options){
+    auto VEGAS(c_integrand_function &integrand, void* userdata, const std::valarray<double> &xmins, const std::valarray<double> &xmaxs, const nlohmann::json &options){
 
         // Allocate buffers for output value(s)
         int FDIM = options.at("FDIM");
-        int NDIM = options.at("NDIM");
+        int XDIM = options.at("NDIM");
         int NVEC = options.at("NVEC");
         cubareal EPSREL = options.at("EPSREL");
         cubareal EPSABS = options.at("EPSABS");
@@ -165,17 +140,44 @@ namespace potter {
         const char* STATEFILE = nullptr;
         void* SPIN = nullptr;
 
+        // Argument size checking
+        if (xmins.size() != xmaxs.size()){
+            throw std::invalid_argument("lengths of xmin and xmax don't match");
+        }
+        if (xmins.size() != XDIM){
+            throw std::invalid_argument("NDIM doesn't match length of x");
+        }
+
+        // The function that remaps from Cuba to integrand function style
+        CubaCallArgs args(integrand, userdata, xmins, xmaxs);
+        auto Cuba_integrand = [](const int *pndim, const cubareal *x, const int *fdim, cubareal *fval, void *p_shared_data) -> int{
+            auto& shared = *((class CubaCallArgs*)(p_shared_data));
+            Eigen::Map<const Eigen::ArrayXd> xmapped(&(x[0]), *pndim);
+            Eigen::Map<const Eigen::ArrayXd> xmins(&(shared.xmins[0]), *pndim);
+            Eigen::Map<const Eigen::ArrayXd> xmaxs(&(shared.xmaxs[0]), *pndim);
+            // Scale x from [0,1] into the full range [xmin, xmax]
+            Eigen::ArrayXd xunscaled = xmins + xmapped*(xmaxs-xmins);
+            const unsigned ndim_unsigned = *pndim, fdim_unsigned = *fdim; 
+            // Call our standard function
+            shared.func(ndim_unsigned, &(xunscaled[0]), shared.userdata, fdim_unsigned, fval);
+            // Then normalize by Jacobian values
+            Eigen::Map<Eigen::ArrayXd> fmapped(&(fval[0]), *fdim);
+            fmapped /= shared.Jacobian;
+            return 0; // success
+        };
+        
         int neval, fail;
         std::size_t fdim = static_cast<std::size_t>(FDIM);
         cubareal integral[fdim], error[fdim], prob[fdim]; 
-        
-        Vegas(FDIM, NDIM, integrand, shared, NVEC,
+        Vegas(XDIM, FDIM, Cuba_integrand, &args, NVEC,
             EPSREL, EPSABS, VERBOSE, SEED,
             MINEVAL, MAXEVAL, NSTART, NINCREASE, NBATCH,
             GRIDNO, STATEFILE, SPIN,
             &neval, &fail, integral, error, prob
         );
-        OutputType val(integral, fdim), err(error, fdim);
+        OutputType val(FDIM), err(FDIM);
+        Eigen::Map<Eigen::ArrayXd>(&(val[0]), FDIM) = Eigen::Map<Eigen::ArrayXd>(&(integral[0]), FDIM);
+        Eigen::Map<Eigen::ArrayXd>(&(err[0]), FDIM) = Eigen::Map<Eigen::ArrayXd>(&(error[0]), FDIM);
         return std::make_tuple(val, err);
     }
 }
