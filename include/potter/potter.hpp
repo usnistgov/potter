@@ -374,6 +374,7 @@ public:
         return std::valarray<double>(0.0, ndim);
     }
 
+    /// A helper function to make the output tuple in the right type
     template<typename TYPE>
     auto make_output_tuple(const TYPE& Tstar, const std::valarray<double> &outval, const std::valarray<double> &outerr) const {
         if constexpr (std::is_same_v<TYPE, double>) {
