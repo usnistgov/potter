@@ -20,6 +20,10 @@
 
 #include "nlohmann/json.hpp"
 
+#include "integration.hpp"
+#include "molecule.hpp"
+#include "evaluator.hpp"
+
 double factorial(double n) {
     return std::tgamma(n + 1);
 }
@@ -63,173 +67,8 @@ auto gss(std::function<double(double)> f, double a, double b, const double tol =
     return std::make_tuple((b + a) / 2, f((b + a) / 2));
 }
 
-template <typename TYPE>
-class Molecule {
-
-public:
-    using EColArray = Eigen::Array<TYPE, Eigen::Dynamic, 1>;
-    using CoordMatrix = Eigen::Array<TYPE, 3, Eigen::Dynamic>;
-    CoordMatrix coords, coords_initial;
-
-    Molecule(const std::vector<std::vector<TYPE>>& pts) {
-        coords.resize(3, pts.size());
-        for (auto i = 0; i < pts.size(); ++i) {
-            auto &pt = pts[i];
-            for (auto j = 0; j < pt.size(); ++j) {
-                coords(j, i) = pt[j];
-            }
-        }
-        coords_initial = coords;
-    };
-    void reset() {
-        coords = coords_initial;
-    };
-    CoordMatrix rotZ3(TYPE theta) const {
-        // Rotation matrix for rotation around the z axis in 3D
-        // See https://en.wikipedia.org/wiki/Rotation_matrix#Basic_rotations
-        return (Eigen::ArrayXXd(3,3) <<
-            cos(theta), -sin(theta), 0,
-            sin(theta), cos(theta),  0,
-                0,           0,      1 ).finished();
-    };
-    CoordMatrix rotY3(const TYPE theta) const {
-        // Rotation matrix for rotation around the y axis in 3D
-        // See https://en.wikipedia.org/wiki/Rotation_matrix#Basic_rotations
-        const TYPE c = cos(theta), s = sin(theta);
-        return (Eigen::ArrayXXd(3,3) <<
-            c,  0, s,
-            0,  1, 0,
-            -s, 0, c).finished();
-    }
-    CoordMatrix rotX3(TYPE theta) const {
-        // Rotation matrix for rotation around the x axis in 3D
-        // See https://en.wikipedia.org/wiki/Rotation_matrix#Basic_rotations
-        return (Eigen::ArrayXXd(3,3) <<
-            1,      0,          0,
-            0, cos(theta), -sin(theta),
-            0, sin(theta), cos(theta)).finished();
-    }
-    void rotate_plusx(TYPE angle) {
-        Eigen::Transform<double, 3, Eigen::Affine> rot(Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitX()));
-        coords = rot.linear() * coords.matrix();
-        //coords = rotX3(angle).matrix() * coords.matrix(); // Old method
-    }
-    void rotate_negativex(TYPE angle) {
-        rotate_plusx(-angle);
-    }
-    void rotate_plusy(TYPE angle) {
-        Eigen::Transform<double, 3, Eigen::Affine> rot(Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitY()));
-        coords = rot.linear() * coords.matrix();
-        //coords = rotY3(angle).matrix() * coords.matrix(); // Old method
-    }
-    void rotate_negativey(TYPE angle) {
-        rotate_plusy(-angle);
-    }
-    void rotate_plusz(TYPE angle) {
-        Eigen::Transform<double, 3, Eigen::Affine> rot(Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitZ()));
-        coords = rot.linear()*coords.matrix();
-    }
-    void rotate_negativez(TYPE angle) {
-        rotate_plusz(-angle);
-    }
-    void translatex(TYPE dx) {
-        coords.row(0) += dx;
-    }
-    void translatey(TYPE dy) {
-        coords.row(1) += dy;
-    }
-
-    void translate_3D(TYPE r, TYPE phi, TYPE theta) {
-        TYPE p = sin(theta);
-        coords.row(0) += r * p * cos(phi);
-        coords.row(1) += r * p * sin(phi);
-        coords.row(2) += r * cos(theta);
-    }
-
-    template<typename ArrayType>
-    TYPE get_dist(const ArrayType&rA, const ArrayType&rB) const{
-        return sqrt((rA - rB).square().sum());
-    }
-    Eigen::Index get_Natoms() const {
-        return coords.cols();
-    }
-    auto get_xyz_atom(const Eigen::Index i) const {
-        if (i > coords.cols()) {
-            throw std::invalid_argument("Bad atom index");
-        }
-        return coords.col(i);
-    }
-};
-
-template<typename TYPE>
-class PotentialEvaluator {
-public:
-    std::map<std::tuple<std::size_t, std::size_t>, std::function<double(double)> > potential_map;
-
-    ///< Additional contributions, handled in a very generic way via a callback
-    std::vector<std::function<double(const Molecule<TYPE> &, const Molecule<TYPE>&)>> generic_contributions;
-
-    TYPE eval_pot(const Molecule<TYPE>& molA, const Molecule<TYPE>& molB) const {
-        TYPE u = 0.0;
-        // Sum up site-site contributions to total potential energy
-        for (auto iatom = 0; iatom < molA.get_Natoms(); ++iatom) {
-            auto xyzA = molA.get_xyz_atom(iatom);
-            for (auto jatom = 0; jatom < molB.get_Natoms(); ++jatom) {
-                auto xyzB = molB.get_xyz_atom(jatom);
-                TYPE distij = molA.get_dist(xyzA, xyzB);
-                auto f_potential = get_potential(iatom, jatom);
-                u += f_potential(distij);
-            }
-        }
-        // Add also contributions for other kinds of interactions (e.g., dipole, quadrupole, etc.)
-        for (auto contrib : generic_contributions) {
-            u += contrib(molA, molB);
-        }
-        return u;
-    }
-    /*
-    Connect up all the site-site potentials, all molecules have the same number of sites
-    */
-    void connect_potentials(std::function<double(double)>& f,std::size_t Natoms) {
-        for (auto iatom = 0; iatom < Natoms; ++iatom) {
-            for (auto jatom = 0; jatom < Natoms; ++jatom) {
-                potential_map[std::make_tuple(iatom, jatom)] = f;
-            }
-        }
-    }
-    /*
-    Add a potential for a particular site-site interaction
-
-    @param iatom The index of site on molecule A
-    @param jatom The index of site on molecule B
-    */
-    void add_potential(std::size_t iatom, std::size_t jatom, std::function<double(double)>& f) {
-        potential_map[std::make_tuple(iatom, jatom)] = f;
-    }
-    /*
-    Add a generalized contribution to the overall potential energy.  Callback function takes two molecules
-    */
-    void add_generic_contribution(const std::function<double(const Molecule<TYPE>&, const Molecule<TYPE>&)>& f) {
-        generic_contributions.push_back(f);
-    }
-    /*
-    Get a reference to the potential function for a particular site-site interaction
-    
-    @param i The index of site on molecule A
-    @param j The index of site on molecule B
-
-    */
-    auto& get_potential(std::size_t i, std::size_t j) const {
-        auto itf = potential_map.find(std::make_tuple(i, j));
-        if (itf != potential_map.end()) {
-            return itf->second;
-        }
-        else {
-            throw std::invalid_argument("Bad potential");
-        }
-    }
-};
-
+template<typename TYPE> using Molecule = potter::Molecule<TYPE>;
+template<typename TYPE> using PotentialEvaluator = potter::PairwisePotentialEvaluator<TYPE>;
 
 /// A helper class
 template<typename TYPE, typename TEMPTYPE>

@@ -1,3 +1,4 @@
+#pragma once
 
 #include <functional>
 #include "cubature.h"
@@ -12,7 +13,7 @@ namespace potter {
     Trapezoidal integration -- the workhorse numerical integration routine
     */
     template<typename TYPEX, typename TYPEY>
-    TYPEY trapz(const Eigen::Array<TYPEX, Eigen::Dynamic, 1>& x,
+    inline TYPEY trapz(const Eigen::Array<TYPEX, Eigen::Dynamic, 1>& x,
         const Eigen::Array<TYPEY, Eigen::Dynamic, 1>& y) {
         TYPEY out = 0;
         for (auto i = 0; i < x.size() - 1; ++i) {
@@ -25,7 +26,7 @@ namespace potter {
     Simpson's integration rule
     */
     template<typename TYPEX, typename TYPEY>
-    TYPEY simps(const Eigen::Array<TYPEX, Eigen::Dynamic, 1>& x,
+    inline TYPEY simps(const Eigen::Array<TYPEX, Eigen::Dynamic, 1>& x,
         const Eigen::Array<TYPEY, Eigen::Dynamic, 1>& f) {
         // C++ translation of https://en.wikipedia.org/wiki/Simpson%27s_rule#Composite_Simpson's_rule_for_irregularly_spaced_data
         auto N = x.size() - 1;
@@ -138,6 +139,8 @@ namespace potter {
         return std::make_tuple(val, err);
     }
 
+#if defined(ENABLE_CUBA)
+
     auto get_VEGAS_defaults() {
         return nlohmann::json{
             {"FDIM", 1}, // The dimension of the output vector
@@ -219,4 +222,5 @@ namespace potter {
         Eigen::Map<Eigen::ArrayXd>(&(err[0]), FDIM) = Eigen::Map<Eigen::ArrayXd>(&(error[0]), FDIM);
         return std::make_tuple(val, err);
     }
+#endif
 }
