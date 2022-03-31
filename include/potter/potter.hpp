@@ -175,11 +175,22 @@ public:
     }
 
     /*
+    Given the separation r, calculate the integrand for B_2 for a spherically-symmetric potential
+    for an atomic fluid
+    */
+    void atomic_B2_integrand(const double r, double* fval) {
+        // Get the potential function V(r) that we should use
+        auto& pot = this->evaltr.get_potential(0, 0);
+        TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
+        auto f = [pot, Tstar](double r) -> TEMPTYPE { return (exp(-pot(r) / Tstar) - 1.0)*r*r; };
+        unpack_f<decltype(Tstar)>(f(r), fval);
+    }
+    
+    /*
     Given the separations and angle, calculate the integrand for B_3 for a spherically-symmetric potential
     for an atomic fluid
     */
-    void atomic_B3_integrand(const double r12, const double r13, const double eta_angle, double* fval)
-    {
+    void atomic_B3_integrand(const double r12, const double r13, const double eta_angle, double* fval) {
         // Get the potential function V(r) that we should use
         auto &pot = this->evaltr.get_potential(0, 0);
         TEMPTYPE Tstar = this->Tstar; // Local reference just for sharing with the lambda function f
@@ -266,7 +277,7 @@ public:
 
     Integrator(const std::vector<Molecule<TYPE>>& mol_sys) : mol_sys(mol_sys) {};
     
-    auto& get_mol(size_t i) {
+    auto& get_mol(size_t i) const {
         if (mol_sys.size() < 2) {throw std::invalid_argument("Mol system length must be at least 2!");}
         return mol_sys[i];
     };
@@ -337,8 +348,6 @@ public:
         //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
         auto f_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
             auto& shared = *((class helper*)(p_shared_data));
-            auto& molA = shared.molA;
-            auto& molB = shared.molB;
             double theta1 = x[0], theta2 = x[1], phi = x[2];
             shared.oriented_integrand(theta1, theta2, phi, fval);
             return 0; // success
@@ -348,6 +357,106 @@ public:
         std::valarray<double> val(0.0, 4), err(0.0, 4);
         hcubature(ndim, f_integrand, &shared, 3, &(shared.xmin[0]), &(shared.xmax[0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
         return val[0]/(8*M_PI);
+    }
+
+    template<typename TYPE>
+    auto allocate_buffer(const TYPE & Tstar) const {
+        std::size_t ndim = 0;
+        if constexpr (std::is_same<TYPE, double>::value) {
+            ndim = 1;
+        }
+        else if constexpr (std::is_same<TYPE, std::complex<double>>::value) {
+            ndim = 2;
+        }
+        else if constexpr (std::is_same<TYPE, MultiComplex<double>>::value) {
+            ndim = static_cast<int>(Tstar.get_coef().size());
+        }
+        return std::valarray<double>(0.0, ndim);
+    }
+
+    template <typename TEMPTYPE>
+    std::tuple<TEMPTYPE, TEMPTYPE> one_temperature_B2(TEMPTYPE Tstar, TYPE rstart, TYPE rend) const {
+        // Some local typedefs to avoid typing
+        using SharedData = IntegrandHelper<TYPE, TEMPTYPE>;
+
+        auto outval = allocate_buffer(Tstar), outerr = allocate_buffer(Tstar);
+        
+        bool is_atomic = (get_mol(0).get_Natoms() == 1);
+        SharedData shared(Tstar, mol_sys, potcls);
+        bool is_linear = true; // TODO: check if true with principal axes
+
+        if (is_atomic) {
+            // The integrand function
+            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
+            auto cubature_B2_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *static_cast<SharedData*>(p_shared_data);
+                shared.atomic_B2_integrand(x[0], fval);
+                return 0; // success
+            };
+
+            std::valarray<double> xmins = { rstart }, xmaxs = { rend }; // Limits on r
+
+            int feval_max = 0;
+            if (m_conf.contains("feval_max")) {
+                feval_max = static_cast<int>(m_conf["feval_max"]);
+            }
+            else {
+                throw std::invalid_argument("Key \"feval_max\" must be specified in the configuration JSON");
+            }
+            unsigned naxes = 1; // How many dimensions the integral is taken over (r)
+            unsigned fdim = static_cast<unsigned>(outval.size()); // How many output dimensions
+            hcubature(fdim, cubature_B2_integrand, &shared, naxes, &(xmins[0]), &(xmaxs[0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(outval[0]), &(outerr[0]));
+
+            // Copy into output
+            outval *= -2*M_PI; outerr *= -2*M_PI;
+        }
+        else if (is_linear) {
+
+            // The integrand function
+            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
+            auto cubature_B2_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *static_cast<SharedData*>(p_shared_data);
+                double theta1 = x[0], theta2 = x[1], phi = x[2];
+                shared.rstar = x[3];
+                shared.oriented_integrand(theta1, theta2, phi, fval);
+                return 0; // success
+            };
+
+            std::valarray<double> xmins = { 0, 0, 0, rstart }, xmaxs = { M_PI, M_PI, 2 * M_PI, rend }; // Limits on theta1, theta2, phi, r
+
+            int feval_max = 0;
+            if (m_conf.contains("feval_max")) {
+                feval_max = static_cast<int>(m_conf["feval_max"]);
+            }
+            else {
+                throw std::invalid_argument("Key \"feval_max\" must be specified in the configuration JSON");
+            }
+            unsigned naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
+            unsigned fdim = static_cast<unsigned>(outval.size()); // How many output dimensions
+            hcubature(fdim, cubature_B2_integrand, &shared, naxes, &(xmins[0]), &(xmaxs[0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(outval[0]), &(outerr[0]));
+
+            // Copy into output
+            // ....
+            // The quadruple integral needs to be divided by 8*pi, but the leading term in the
+            // expression for B_2 is -2\pi, so factor becomes -1/4, or -0.25
+            outval *= -0.25; outerr *= -0.25;
+        }
+        else {
+            throw std::invalid_argument("Not yet able to handle non-linear molecules");
+        }
+
+        if constexpr (std::is_same<decltype(Tstar), double>::value) {
+            // If T is double (real)
+            return std::make_tuple(outval[0], outerr[0]);
+        }
+        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+            // If T is a complex number (perhaps for complex step derivatives)
+            return std::make_tuple(decltype(Tstar)(outval[0], outval[1]), decltype(Tstar)(outerr[0], outerr[1]));
+        }
+        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+            // If T is a multicomplex number
+            return std::make_tuple(decltype(Tstar)(outval), decltype(Tstar)(outerr));
+        }
     }
 
     /**
@@ -365,6 +474,9 @@ public:
     template <typename TEMPTYPE>
     std::tuple<TEMPTYPE,TEMPTYPE> one_temperature(int order, TEMPTYPE Tstar, TYPE rstart, TYPE rend) const 
     {
+        if (order == 2) {
+            return one_temperature_B2(Tstar, rstart, rend);
+        }
         
         // Some local typedefs to avoid typing
         using SharedData = IntegrandHelper<TYPE, TEMPTYPE>;
@@ -426,15 +538,7 @@ public:
             throw std::invalid_argument("Key \"feval_max\" must be specified in the configuration JSON");
         }
 
-        // The integrand function
-        //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
-        auto cubature_B2_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-            auto& shared = *static_cast<SharedData*>(p_shared_data);
-            double theta1 = x[0], theta2 = x[1], phi = x[2], r = x[3];
-            shared.rstar = r;
-            shared.oriented_integrand(theta1, theta2, phi, fval);
-            return 0; // success
-        };
+        
 
 #if defined(ENABLE_CUBA)
         switch (order) {
@@ -594,17 +698,7 @@ public:
 
         switch (order) {
         case 2:
-        {
-            int naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
-            hcubature(ndim, cubature_B2_integrand, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
-
-            // Copy into output
-            // ....
-            // The quadruple integral needs to be divided by 8*pi, but the leading term in the
-            // expression for B_2 is -2\pi, so factor becomes -1/4, or -0.25
-            outval = -0.25*vals[0]; outerr = -0.25*errs[0];
-            break;
-        }
+        {}
         case 3:
         {
             // The integrand function
