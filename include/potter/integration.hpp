@@ -8,6 +8,45 @@
 
 namespace potter {
 
+    /*
+    Trapezoidal integration -- the workhorse numerical integration routine
+    */
+    template<typename TYPEX, typename TYPEY>
+    TYPEY trapz(const Eigen::Array<TYPEX, Eigen::Dynamic, 1>& x,
+        const Eigen::Array<TYPEY, Eigen::Dynamic, 1>& y) {
+        TYPEY out = 0;
+        for (auto i = 0; i < x.size() - 1; ++i) {
+            auto ymean = (y[i + 1] + y[i]) / 2.0;
+            out = out + ymean * (x[i + 1] - x[i]);
+        }
+        return out;
+    }
+    /*
+    Simpson's integration rule
+    */
+    template<typename TYPEX, typename TYPEY>
+    TYPEY simps(const Eigen::Array<TYPEX, Eigen::Dynamic, 1>& x,
+        const Eigen::Array<TYPEY, Eigen::Dynamic, 1>& f) {
+        // C++ translation of https://en.wikipedia.org/wiki/Simpson%27s_rule#Composite_Simpson's_rule_for_irregularly_spaced_data
+        auto N = x.size() - 1;
+        auto h = x.tail(N) - x.head(N);
+        auto cube = [](TYPEX x) { return x * x * x; };
+        auto sq = [](TYPEX x) { return x * x; };
+        TYPEY result = 0.0;
+        for (auto i = 1; i < N; i += 2) {
+            auto hph = h[i] + h[i - 1];
+            result += f[i] * (cube(h[i]) + cube(h[i - 1]) + 3.0 * h[i] * h[i - 1] * hph) / (6 * h[i] * h[i - 1]);
+            result += f[i - 1] * (2.0 * cube(h[i - 1.0]) - cube(h[i]) + 3.0 * h[i] * sq(h[i - 1])) / (6 * h[i - 1] * hph);
+            result += f[i + 1] * (2.0 * cube(h[i]) - cube(h[i - 1]) + 3.0 * h[i - 1] * sq(h[i])) / (6 * h[i] * hph);
+        }
+        if ((N + 1) % 2 == 0) {
+            result += f[N] * (2 * sq(h[N - 1]) + 3.0 * h[N - 2] * h[N - 1]) / (6 * (h[N - 2] + h[N - 1]));
+            result += f[N - 1] * (sq(h[N - 1]) + 3.0 * h[N - 1] * h[N - 2]) / (6 * h[N - 2]);
+            result -= f[N - 2] * cube(h[N - 1]) / (6 * h[N - 2] * (h[N - 2] + h[N - 1]));
+        }
+        return result;
+    }
+
     //------------------------------------------------------------------------------------------------------------------
     //------------------------------------------------------------------------------------------------------------------
     
