@@ -476,6 +476,105 @@ public:
         return make_output_tuple(Tstar, std::move(outval), std::move(outerr));
     }
 
+    template <typename TEMPTYPE>
+    std::tuple<TEMPTYPE, TEMPTYPE> one_temperature_B3(TEMPTYPE Tstar, TYPE rstart, TYPE rend) const {
+        // Some local typedefs to avoid typing
+        using SharedData = IntegrandHelper<TYPE, TEMPTYPE>;
+
+        auto outval = allocate_buffer(Tstar), outerr = allocate_buffer(Tstar);
+
+        bool is_atomic = (get_mol(0).get_Natoms() == 1);
+        SharedData shared(Tstar, mol_sys, potcls);
+        bool is_linear = true; // TODO: check if true with principal axes
+
+        int feval_max = 0;
+        if (m_conf.contains("feval_max")) {
+            feval_max = static_cast<int>(m_conf["feval_max"]);
+        }
+        else {
+            throw std::invalid_argument("Key \"feval_max\" must be specified in the configuration JSON");
+        }
+        unsigned fdim = static_cast<unsigned>(outval.size()); // How many output dimensions
+
+        if (is_atomic) {
+
+            // The integrand function
+            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
+            auto cubature_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *((SharedData*)(p_shared_data));
+                shared.atomic_B3_integrand(x[0], x[1], x[2], fval);
+                return 0; // success
+            };
+
+            double rbreak = 1.3;
+            std::vector<std::valarray<double>> xmins = { { rstart, rstart, -1 }, { rbreak, rstart, -1 } };
+            std::vector<std::valarray<double>> xmaxs = { { rbreak, rend, 1 },    { rend, rend, 1 } };
+
+            int naxes = 3; // How many dimensions the integral is taken over (r12, r13, eta)
+            for (auto i = 0; i < xmins.size(); ++i) {
+                auto vals = allocate_buffer(Tstar), errs = allocate_buffer(Tstar);
+                auto xmin = xmins[i];
+                auto xmax = xmaxs[i];
+
+                hcubature(fdim, cubature_integrand, &shared, naxes, &(xmin[0]), &(xmax[0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0]), &(errs[0]));
+
+                // Copy into output
+                outval += vals; outerr += std::abs(errs);
+            }
+            // Rescale with the leading factor
+            outval *= 8 * M_PI * M_PI / 3; outerr *= 8 * M_PI * M_PI / 3;
+        }
+        else if (is_linear) {
+            std::valarray<double> xmins = { 0 ,rstart,0,0,rstart,0,0,0,0 };
+            std::valarray<double> xmaxs = { M_PI, rend, M_PI, 2*M_PI , rend , M_PI , 2 * M_PI ,  M_PI , 2 * M_PI };
+
+            // The integrand function
+            auto integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *static_cast<SharedData*>(p_shared_data);
+                // particle 1 orientation
+                double theta_1_o = x[0];
+
+                // particle 2 location
+                double r_12 = x[1];
+
+                // particle 2 orientation
+                double theta_2_o = x[2]; double phi_2_o = x[3];
+
+                // particle 3 location
+                double r_13 = x[4];
+                double theta_3 = x[5]; double phi_3 = x[6];
+
+                // particle 3 orientation
+                double theta_3_o = x[7]; double phi_3_o = x[8];
+
+                shared.oriented_integrand_3D(theta_1_o, r_12, theta_2_o, phi_2_o, r_13, theta_3, phi_3, theta_3_o, phi_3_o, fval);
+                return 0; // success
+            };
+            
+            unsigned naxes = 9; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
+
+#if defined(ENABLE_CUBA)
+            auto opt = potter::get_VEGAS_defaults();
+            opt["FDIM"] = fdim;
+            opt["NDIM"] = naxes;
+            opt["MAXEVAL"] = feval_max;
+            std::tie(outval, outerr) = potter::VEGAS<OutputType>(g, &shared, xmins, xmaxs, opt);
+#else
+            hcubature(fdim, integrand, &shared, naxes, &(xmins[0]), &(xmaxs[0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(outval[0]), &(outerr[0]));
+#endif
+
+            // Copy into output
+            // ....
+            double fac = -1.0 / 3.0 * (pow(2.0, 3.0) * pow(M_PI, 2.0)) / (pow(4.0 * M_PI, 3.0));
+            outval *= fac; outerr *= fac;
+        }
+        else {
+            throw std::invalid_argument("Not yet able to handle non-linear molecules");
+        }
+        return make_output_tuple(Tstar, std::move(outval), std::move(outerr));
+    }
+
+
     /**
     Do the calculations for one temperature
 
@@ -494,6 +593,9 @@ public:
         if (order == 2) {
             return one_temperature_B2(Tstar, rstart, rend);
         }
+        else if (order == 3) {
+            return one_temperature_B3(Tstar, rstart, rend);
+        }
         
         // Some local typedefs to avoid typing
         using SharedData = IntegrandHelper<TYPE, TEMPTYPE>;
@@ -502,7 +604,6 @@ public:
         switch (order)
         {
         case 2:
-            xmins = {{ 0, 0, 0, rstart }}, xmaxs = {{ M_PI, M_PI, 2 * M_PI, rend }}; // Limits on theta1, theta2, phi, r
             break;
         case 3:{
             // Check if three particles are given or not (if not proceed with atmoic b_3_integrand)
@@ -662,28 +763,7 @@ public:
         case 2:
         {}
         case 3:
-        {
-            // The integrand function
-            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
-            auto cubature_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-                auto& shared = *((SharedData*)(p_shared_data));
-                shared.atomic_B3_integrand(x[0], x[1], x[2], fval);
-                return 0; // success
-            };
-
-            int naxes = 3; // How many dimensions the integral is taken over (r12, r13, eta)
-            for (auto i = 0; i < xmins.size(); ++i){
-                
-                hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[i][0]), &(xmaxs[i][0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[i][0]), &(errs[i][0]));
-
-                // Copy into output
-                outval += vals[i]; outerr += std::abs(errs[i]);
-            }
-            // Rescale with the leading factor
-            outval *= 8*M_PI*M_PI/3; outerr *= 8*M_PI*M_PI/3;
-            
-            break;
-        }
+        {}
         case 4:
         {
             // Fourth virial coefficient: three parts B_4_1,B_4_2,B_4_3
