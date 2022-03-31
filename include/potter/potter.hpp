@@ -70,34 +70,26 @@ auto gss(std::function<double(double)> f, double a, double b, const double tol =
 template<typename TYPE> using Molecule = potter::Molecule<TYPE>;
 template<typename TYPE> using PotentialEvaluator = potter::PairwisePotentialEvaluator<TYPE>;
 
-/// A helper class
+/// A helper class to manage evaluation of the various integrand terms 
 template<typename TYPE, typename TEMPTYPE>
-class SharedDataBase {
-public:
-    TEMPTYPE Tstar;
-    TYPE rstar;
+class IntegrandHelper {
+private:
     std::vector<Molecule<TYPE>> mol_sys;
-    Molecule<TYPE> molA, molB;
-    const std::vector<std::valarray<TYPE>> xmin, xmax;
-    const PotentialEvaluator<TYPE>& evaltr;
-    SharedDataBase(TEMPTYPE Tstar, TYPE rstar,
-        const Molecule<TYPE>& molA, const Molecule<TYPE>& molB, 
-        const PotentialEvaluator<TYPE>& evaltr, 
-        const std::vector<std::valarray<TYPE>>& xmin = {},
-        const std::vector<std::valarray<TYPE>>& xmax = {}
-    )
-        : Tstar(Tstar), rstar(rstar), mol_sys({ molA, molB }), molA(mol_sys[0]), molB(mol_sys[1]), evaltr(evaltr), xmin(xmin), xmax(xmax) {};
-    SharedDataBase(TEMPTYPE Tstar, TYPE rstar,
-        const std::vector<Molecule<TYPE>>& mol_sys,
-        const PotentialEvaluator<TYPE>& evaltr,
-        const std::vector<std::valarray<TYPE>>& xmin = {},
-        const std::vector<std::valarray<TYPE>>& xmax = {}
-    )
-        : Tstar(Tstar), rstar(rstar), mol_sys(mol_sys), molA(get_mol(mol_sys,0)), molB(get_mol(mol_sys,1)) , evaltr(evaltr), xmin(xmin), xmax(xmax) {};
+public:
+    TEMPTYPE Tstar = -1;
+    TYPE rstar = -1;
     
-    template<typename MolSys> 
-    auto get_mol(const MolSys& mol_sys, size_t i) {
-        if (mol_sys.size() < 2) {throw std::invalid_argument("Mol system length must be at least 2!");}
+    const PotentialEvaluator<TYPE>& evaltr;
+
+    IntegrandHelper(
+        const TEMPTYPE &Tstar,
+        const std::vector<Molecule<TYPE>>& mol_sys,
+        const PotentialEvaluator<TYPE>& evaltr
+    )
+    : Tstar(Tstar), mol_sys(mol_sys), evaltr(evaltr) {};
+
+    auto& get_mol(std::size_t i) {
+        if (mol_sys.size() < 2) { throw std::invalid_argument("Mol system length must be at least 2!"); }
         return mol_sys[i];
     };
 
@@ -105,11 +97,40 @@ public:
         return evaltr.eval_pot(molA, molB);
     };
 
-    /* 
-    Given the orientational angles, calculate the integrand
+    /**
+    * Take the variable a and unpack it into the double buffer
     */
-    void orient_integrand(double theta1, double theta2, double phi, double *fval)
+    template<typename TYPE>
+    void unpack_f(const TYPE &a, double *fval) {
+        if constexpr (std::is_same<TYPE, double>::value) {
+            // If T is double (real)
+            fval[0] = a;
+        }
+        else if constexpr (std::is_same<TYPE, std::complex<double>>::value) {
+            // If T is a complex number (perhaps for complex step derivatives)
+            fval[0] = a.real();
+            fval[1] = a.imag();
+        }
+        else if constexpr (std::is_same<TYPE, MultiComplex<double>>::value) {
+            // If T is a multicomplex number
+            auto& c = a.get_coef();
+            for (auto i = 0; i < c.size(); ++i) {
+                fval[i] = c[i];
+            }
+        }
+        else {
+            throw std::invalid_argument("temparature type doesn't match");
+        }
+    }
+
+    /* 
+    Given the orientational angles for linear molecules, calculate the integrand
+    */
+    void oriented_integrand(double theta1, double theta2, double phi, double *fval)
     {
+        auto molA = get_mol(0);
+        auto molB = get_mol(1);
+
         // Rotate molecule #1
         molA.reset(); // Back to COM at origin
         molA.rotate_negativey(theta1); // First rotate around -y axis
@@ -122,25 +143,10 @@ public:
 
         auto V = eval_pot(molA, molB); // And finally evaluate the potential
         auto a = (exp(-V/Tstar)-1.0)*sin(theta1)*sin(theta2)*pow(rstar, 2);
-        
-        if constexpr (std::is_same<decltype(Tstar), double>::value) {
-            // If T is double (real)
-            fval[0] = a;
-        }
-        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-            // If T is a complex number (perhaps for complex step derivatives)
-            fval[0] = a.real();
-            fval[1] = a.imag();
-        }
-        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-            // If T is a multicomplex number
-            auto &c = a.get_coef();
-            for (auto i = 0; i < c.size(); ++i) {
-                fval[i] = c[i];
-            }
-        }
+        unpack_f<decltype(Tstar)>(a, fval);
     }
-    void orient_integrand_3D(double theta_1_o, double r_12, double theta_2_o, double phi_2_o, double r_13, double theta_3, double phi_3, double theta_3_o, double phi_3_o, double* fval) {
+
+    void oriented_integrand_3D(double theta_1_o, double r_12, double theta_2_o, double phi_2_o, double r_13, double theta_3, double phi_3, double theta_3_o, double phi_3_o, double* fval) {
 
         mol_sys[0].reset(); // Back to COM at origin
         mol_sys[1].reset();
@@ -165,25 +171,9 @@ public:
         auto V23 = eval_pot(mol_sys[1], mol_sys[2]);
         auto SQUARE = [](double x) { return x * x; };
         auto a = sin(theta_1_o)*sin(theta_2_o)*sin(theta_3_o)*sin(theta_3)*(exp(-V12 / Tstar) - 1.0) * (exp(-V13 / Tstar) - 1.0) * (exp(-V23 / Tstar) - 1.0) * SQUARE(r_12) * SQUARE(r_13);
-
-        
-            if constexpr (std::is_same<decltype(Tstar), double>::value) {
-            // If T is double (real)
-            fval[0] = a;
-        }
-        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-            // If T is a complex number (perhaps for complex step derivatives)
-            fval[0] = a.real();
-            fval[1] = a.imag();
-        }
-        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-            // If T is a multicomplex number
-            auto& c = a.get_coef();
-            for (auto i = 0; i < c.size(); ++i) {
-                fval[i] = c[i];
-            }
-        }
+        unpack_f<decltype(Tstar)>(a, fval);
     }
+
     /*
     Given the separations and angle, calculate the integrand for B_3 for a spherically-symmetric potential
     for an atomic fluid
@@ -197,25 +187,8 @@ public:
         auto SQUARE = [](double x) { return x*x; };
         auto rangle = sqrt(SQUARE(r12) + SQUARE(r13) - 2*r12*r13*eta_angle);
         auto a = SQUARE(r12)*f(r12)*SQUARE(r13)*f(r13)*f(rangle);
-
-        if constexpr (std::is_same<decltype(Tstar), double>::value) {
-            // If T is double (real)
-            fval[0] = a;
-        }
-        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-            // If T is a complex number (perhaps for complex step derivatives)
-            fval[0] = a.real();
-            fval[1] = a.imag();
-        }
-        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-            // If T is a multicomplex number
-            auto& c = a.get_coef();
-            for (auto i = 0; i < c.size(); ++i) {
-                fval[i] = c[i];
-            }
-        }
+        unpack_f<decltype(Tstar)>(a, fval);
     }
-
 
     /*
     Given the separations and angles, calculate the integrand for B4_1 for a spherically-symmetric potential
@@ -235,29 +208,13 @@ public:
         auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gamma_angle);
 
         auto a = sq_r12 * f(r12)*sq_r13*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14);
-
-        if constexpr (std::is_same<decltype(Tstar), double>::value) {
-            // If T is double (real)
-            fval[0] = a;
-        }
-        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-            // If T is a complex number (perhaps for complex step derivatives)
-            fval[0] = a.real();
-            fval[1] = a.imag();
-        }
-        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-            // If T is a multicomplex number
-            auto& c = a.get_coef();
-            for (auto i = 0; i < c.size(); ++i) {
-                fval[i] = c[i];
-            }
-        }
+        unpack_f<decltype(Tstar)>(a, fval);
     }
 
     /*
-Given the separations and angles, calculate the integrand for B4_2 for a spherically-symmetric potential
-for an atomic fluid
-*/
+    Given the separations and angles, calculate the integrand for B4_2 for a spherically-symmetric potential
+    for an atomic fluid
+    */
     void atomic_B4_2_integrand(const double eta_angle, const double r12, const double r13, const double gamma_angle, const double r14, double* fval)
     {
         // Get the potential function V(r) that we should use
@@ -272,29 +229,13 @@ for an atomic fluid
         auto rangle_13_14 = sqrt(sq_r14 + sq_r13 - 2 * r14*r13*gamma_angle);
 
         auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14);
-
-        if constexpr (std::is_same<decltype(Tstar), double>::value) {
-            // If T is double (real)
-            fval[0] = a;
-        }
-        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-            // If T is a complex number (perhaps for complex step derivatives)
-            fval[0] = a.real();
-            fval[1] = a.imag();
-        }
-        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-            // If T is a multicomplex number
-            auto& c = a.get_coef();
-            for (auto i = 0; i < c.size(); ++i) {
-                fval[i] = c[i];
-            }
-        }
+        unpack_f<decltype(Tstar)>(a, fval);
     }
 
     /*
-Given the separations and angles, calculate the integrand for B4_3 for a spherically-symmetric potential
-for an atomic fluid
-*/
+    Given the separations and angles, calculate the integrand for B4_3 for a spherically-symmetric potential
+    for an atomic fluid
+    */
     void atomic_B4_3_integrand(const double eta_angle, const double zeta_angle, const double gamma_angle, const double r12, const double r13, const double r14, double* fval)
     {
         // Get the potential function V(r) that we should use
@@ -309,23 +250,7 @@ for an atomic fluid
         auto rangle_13_14 = sqrt(sq_r13 + sq_r14 - 2 * r13*r14*gamma_angle);
         auto rangle_12_14 = sqrt(sq_r12 + sq_r13 - 2 * r12*r13*(eta_angle * gamma_angle + sqrt(1.0 - SQUARE(eta_angle))*sqrt(1.0 - SQUARE(gamma_angle))*cos(zeta_angle)));
         auto a = sq_r12 * f(r12)*sq_r13*f(r13)*sq_r14*f(r14)*f(rangle_12_13)*f(rangle_13_14)*f(rangle_12_14);
-
-        if constexpr (std::is_same<decltype(Tstar), double>::value) {
-            // If T is double (real)
-            fval[0] = a;
-        }
-        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-            // If T is a complex number (perhaps for complex step derivatives)
-            fval[0] = a.real();
-            fval[1] = a.imag();
-        }
-        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-            // If T is a multicomplex number
-            auto& c = a.get_coef();
-            for (auto i = 0; i < c.size(); ++i) {
-                fval[i] = c[i];
-            }
-        }
+        unpack_f<decltype(Tstar)>(a, fval);
     }
 };
 
@@ -334,18 +259,14 @@ class Integrator {
 private:
     std::unique_ptr<ThreadPool> m_pool;
     nlohmann::json m_conf;
-
+    std::vector<Molecule<TYPE>> mol_sys;
 public:
     using EColArray = Eigen::Array<TYPE, Eigen::Dynamic, 1>;
-    std::vector<Molecule<TYPE>> mol_sys;
-    Molecule<TYPE> &mol1, &mol2;
     PotentialEvaluator<TYPE> potcls;
 
-    Integrator(const Molecule<TYPE>& mol1, const Molecule<TYPE>& mol2) : mol_sys({mol1, mol2}), mol1(mol_sys[0]) ,  mol2(mol_sys[1]) {};
-    Integrator(const std::vector<Molecule<TYPE>>& mol_sys) : mol_sys(mol_sys) , mol1(get_mol(this->mol_sys,0)) , mol2(get_mol(this->mol_sys,1)) {};
+    Integrator(const std::vector<Molecule<TYPE>>& mol_sys) : mol_sys(mol_sys) {};
     
-    template<typename MolSys> 
-    auto& get_mol(MolSys& mol_sys, size_t i) {
+    auto& get_mol(size_t i) {
         if (mol_sys.size() < 2) {throw std::invalid_argument("Mol system length must be at least 2!");}
         return mol_sys[i];
     };
@@ -362,15 +283,17 @@ public:
         arr rv = exp(arr::LinSpaced(N, log(rstart), log(rend)));
         arrT integrand;
         integrand.resize(rv.size());
-        Molecule<TYPE> mol1 = this->mol1, mol2 = this->mol2;
+        
+        // Get the potential function V(r) that we should use
+        auto& pot = get_evaluator().get_potential(0, 0);
+
+        // Sample the range of r
         for (auto ir = 0; ir < rv.size(); ++ir) {
             auto r = rv[ir];
-            mol2.reset();
-            mol2.translatex(r);
-            auto V = potcls.eval_pot(mol1, mol2);
+            auto V = pot(r);
             integrand[ir] = (exp(-V/Tstar)-1.0)*r*r;
         }
-        return -2*M_PI*trapz(rv, integrand);
+        return -2*M_PI*potter::trapz(rv, integrand);
     };
     /* 
     Get a reference to the evaluator class, giving access to matrix of site-site potential functions, for instance
@@ -385,11 +308,12 @@ public:
             m_pool = std::unique_ptr<ThreadPool>(new ThreadPool(Nthreads));
         }
     }
-    /* 
-    A helper function to evaluate the potential given COM separation r and the orientation angles
+
+    /**
+    * A helper function to evaluate the potential given COM separation r and the orientation angles
     */
     double potential(double r, double theta1, double theta2, double phi){
-        Molecule<TYPE> molA = mol1, molB = mol2;
+        Molecule<TYPE> molA = get_mol(0), molB = get_mol(1);
         // Rotate molecule #1
         molA.reset(); // Back to COM at origin
         molA.rotate_negativey(theta1); // First rotate around -y axis
@@ -403,19 +327,20 @@ public:
         auto V = potcls.eval_pot(molA, molB); // And finally evaluate the potential in the form V/epsilon
         return V;
     }
-    /*
-    Calculate the orientationally-averaged potential
+
+    /**
+    * Calculate the orientationally-averaged potential
     */
-    TYPE orient_averaged_potential(TYPE rstar, Molecule<TYPE> mol1, Molecule<TYPE> mol2) const {
-        using SharedData = SharedDataBase<TYPE, double>;
-        SharedData shared(0.0, 0.0, mol1, mol2, potcls, {0,0,0}, { M_PI, M_PI, 2 * M_PI });
+    TYPE orientationally_averaged_potential(TYPE rstar, Molecule<TYPE> mol1, Molecule<TYPE> mol2) const {
+        using Helper = IntegrandHelper<TYPE, double>;
+        Helper Helper(0.0, 0.0, mol1, mol2, potcls);
         //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
         auto f_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-            auto& shared = *((class SharedDataBase<double, double>*)(p_shared_data));
+            auto& shared = *((class helper*)(p_shared_data));
             auto& molA = shared.molA;
             auto& molB = shared.molB;
             double theta1 = x[0], theta2 = x[1], phi = x[2];
-            shared.orient_integrand(theta1, theta2, phi, fval);
+            shared.oriented_integrand(theta1, theta2, phi, fval);
             return 0; // success
         };
         shared.rstar = rstar;
@@ -438,11 +363,11 @@ public:
     @note The return numerical type maybe be one of double, std::complex<double> or MultiComplex<double>
     */
     template <typename TEMPTYPE>
-    std::tuple<TEMPTYPE,TEMPTYPE> one_temperature(int order, TEMPTYPE Tstar, TYPE rstart, TYPE rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2) const 
+    std::tuple<TEMPTYPE,TEMPTYPE> one_temperature(int order, TEMPTYPE Tstar, TYPE rstart, TYPE rend) const 
     {
         
         // Some local typedefs to avoid typing
-        using SharedData = SharedDataBase<TYPE, TEMPTYPE>;
+        using SharedData = IntegrandHelper<TYPE, TEMPTYPE>;
 
         std::vector<std::valarray<double>> xmins, xmaxs;
         switch (order)
@@ -472,7 +397,7 @@ public:
         default:
             break;
         }
-        SharedData shared(Tstar, 0.0, mol_sys, potcls, xmins, xmaxs);
+        SharedData shared(Tstar, mol_sys, potcls);
         
         int ndim = 1; // If T is a floating point number (default)
         std::valarray<double> outval, outerr;
@@ -501,12 +426,22 @@ public:
             throw std::invalid_argument("Key \"feval_max\" must be specified in the configuration JSON");
         }
 
-#if !defined(NO_CUBA)
+        // The integrand function
+        //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
+        auto cubature_B2_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+            auto& shared = *static_cast<SharedData*>(p_shared_data);
+            double theta1 = x[0], theta2 = x[1], phi = x[2], r = x[3];
+            shared.rstar = r;
+            shared.oriented_integrand(theta1, theta2, phi, fval);
+            return 0; // success
+        };
+
+#if defined(ENABLE_CUBA)
         switch (order) {
         case 2:
         {
         auto Cuba_integrand = [](const int *pndim, const cubareal x[], const int *pncomp, cubareal fval[], void *p_shared_data) {
-            auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+            auto& shared = *((class SharedData*)(p_shared_data));
             
             double theta1, theta2, phi, r;
             double jacobian = 1.0;
@@ -519,7 +454,7 @@ public:
             phi = shared.xmin[0][2] + x[2] * (shared.xmax[0][2] - shared.xmin[0][2]);
             r = shared.xmin[0][3] + x[3] * (shared.xmax[0][3] - shared.xmin[0][3]);
             shared.rstar = r;
-            shared.orient_integrand(theta1, theta2, phi, fval);
+            shared.oriented_integrand(theta1, theta2, phi, fval);
             for (auto i = 0; i < *pncomp; ++i){
                 fval[i] *= jacobian;
             }
@@ -566,7 +501,7 @@ public:
 
             // third virial coefficient with cuba lib
             auto Cuba_integrand_3D = [](const int* pndim, const cubareal x[], const int* pncomp, cubareal fval[], void* p_shared_data) {
-            auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+            auto& shared = *((class SharedData*)(p_shared_data));
                 
             // particle one is at origin
             // particle 1 orientation
@@ -601,7 +536,7 @@ public:
             double theta_3_o_sc = shared.xmin[0][7] + x[7] * (shared.xmax[0][7] - shared.xmin[0][7]);
             double phi_3_o_sc   = shared.xmin[0][8] + x[8] * (shared.xmax[0][8] - shared.xmin[0][8]);
         
-            shared.orient_integrand_3D(theta_1_o_sc, r_12_sc, theta_2_o_sc, phi_2_o_sc, r_13_sc, theta_3_sc, phi_3_sc, theta_3_o_sc, phi_3_o_sc, fval);
+            shared.oriented_integrand_3D(theta_1_o_sc, r_12_sc, theta_2_o_sc, phi_2_o_sc, r_13_sc, theta_3_sc, phi_3_sc, theta_3_o_sc, phi_3_o_sc, fval);
 
             for (auto i = 0; i < *pncomp; ++i) {
                 fval[i] *= jacobian;
@@ -660,18 +595,8 @@ public:
         switch (order) {
         case 2:
         {
-            // The integrand function
-            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
-            auto cubature_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
-                double theta1 = x[0], theta2 = x[1], phi = x[2], r = x[3];
-                shared.rstar = r;
-                shared.orient_integrand(theta1, theta2, phi, fval);
-                return 0; // success
-            };
-
             int naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
-            hcubature(ndim, cubature_integrand, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
+            hcubature(ndim, cubature_B2_integrand, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
 
             // Copy into output
             // ....
@@ -685,7 +610,7 @@ public:
             // The integrand function
             //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
             auto cubature_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                auto& shared = *((SharedData*)(p_shared_data));
                 shared.atomic_B3_integrand(x[0], x[1], x[2], fval);
                 return 0; // success
             };
@@ -709,19 +634,19 @@ public:
             // The integrand functions
             //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
             auto cubature_integrand_1 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                auto& shared = *((SharedData*)(p_shared_data));
                 shared.atomic_B4_1_integrand(x[0], x[1], x[2], x[3], x[4], fval);
                 return 0; // success
             };
 
             auto cubature_integrand_2 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                auto& shared = *((SharedData*)(p_shared_data));
                 shared.atomic_B4_2_integrand(x[0], x[1], x[2], x[3], x[4], fval);
                 return 0; // success
             };
 
             auto cubature_integrand_3 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-                auto& shared = *((class SharedDataBase<double, TEMPTYPE>*)(p_shared_data));
+                auto& shared = *((SharedData*)(p_shared_data));
                 shared.atomic_B4_3_integrand(x[0], x[1], x[2], x[3], x[4], x[5], fval);
                 return 0; // success
             };
@@ -765,10 +690,10 @@ public:
         }
     }
     
-    std::map<std::string, double> B_and_derivs(int order, int Nderivs, double T, double rstart, double rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2){
+    std::map<std::string, double> B_and_derivs(int order, int Nderivs, double T, double rstart, double rend){
         
         if (Nderivs == 0) {
-            auto [val,esterr] = this->one_temperature(order, T, rstart, rend, mol1, mol2);
+            auto [val,esterr] = this->one_temperature(order, T, rstart, rend);
             return {
                 {"T", T},
                 {"B", val},
@@ -777,7 +702,7 @@ public:
         }
         if (Nderivs == 1) {
             double h = 1e-100;
-            auto [val,esterr] = this->one_temperature(order, std::complex<double>(T,h), rstart, rend, mol1, mol2);
+            auto [val,esterr] = this->one_temperature(order, std::complex<double>(T,h), rstart, rend);
             return {
                 {"T", T},
                 {"B", val.real()},
@@ -788,8 +713,8 @@ public:
         }
         else {
             std::function<std::tuple<MultiComplex<double>,MultiComplex<double>>(const MultiComplex<double>&)> f(
-                [this, order, rstart, rend, mol1, mol2](const MultiComplex<double>& T) {
-                    return this->one_temperature(order, T, rstart, rend, mol1, mol2);
+                [this, order, rstart, rend](const MultiComplex<double>& T) {
+                    return this->one_temperature(order, T, rstart, rend);
                 });
             bool and_val = true;
             auto [val,esterr] = diff_mcx1(f, T, Nderivs, and_val);
@@ -813,7 +738,7 @@ public:
             return o;
         }
     }
-    auto parallel_B_and_derivs(int order, int Nthreads, int Nderivs, std::vector<double> Tvec, double rstart, double rend, Molecule<TYPE> mol1, Molecule<TYPE> mol2)
+    auto parallel_B_and_derivs(int order, int Nthreads, int Nderivs, std::vector<double> Tvec, double rstart, double rend)
     {
         init_thread_pool(Nthreads);
         std::vector<double> times(Tvec.size());
@@ -822,9 +747,9 @@ public:
         for (auto T : Tvec) {
             auto& result = outputs[i];
             auto& time = times[i];
-            std::function<void(void)> one_Temp = [this, order, Nderivs, T, rstart, rend, mol1, mol2, &result, &time]() {
+            std::function<void(void)> one_Temp = [this, order, Nderivs, T, rstart, rend, &result, &time]() {
                 auto startTime = std::chrono::high_resolution_clock::now();
-                result = this->B_and_derivs(order, Nderivs, T, rstart, rend, mol1, mol2);
+                result = this->B_and_derivs(order, Nderivs, T, rstart, rend);
                 auto endTime = std::chrono::high_resolution_clock::now();
                 time = std::chrono::duration<double>(endTime - startTime).count(); 
                 {
@@ -841,27 +766,27 @@ public:
         m_pool->WaitAll();
         return outputs;
     }
-    TYPE orientation_averaged_integrate(const TYPE Tstar, const TYPE rstart, const TYPE rend) {
-        using arr = Eigen::Array<TYPE, Eigen::Dynamic, 1>;
-        bool parallel = false;
-        if (parallel){
-            // Parallel
-            TYPE result, time;
-            Molecule<TYPE> mol1 = this->mol1, mol2 = this->mol2;
-            auto one_temperature_job = [this, Tstar, rstart, rend, mol1, mol2, &result, &time]() {
-                auto startTime = std::chrono::high_resolution_clock::now();
-                result = one_temperature<double>(Tstar, rstart, rend, mol1, mol2);
-                auto endTime = std::chrono::high_resolution_clock::now();
-                time = std::chrono::duration<double>(endTime - startTime).count();
-            };
-            m_pool->AddJob(one_temperature_job);
-            // Wait until all the threads finish...
-            m_pool->WaitAll();
-            return result;
-        }
-        else {
-            // Serial
-            return one_temperature(Tstar, rstart, rend, mol1, mol2);
-        }
-    }
+    //TYPE orientation_averaged_integrate(const TYPE Tstar, const TYPE rstart, const TYPE rend) {
+    //    using arr = Eigen::Array<TYPE, Eigen::Dynamic, 1>;
+    //    bool parallel = false;
+    //    if (parallel){
+    //        // Parallel
+    //        TYPE result, time;
+    //        Molecule<TYPE> mol1 = this->mol1, mol2 = this->mol2;
+    //        auto one_temperature_job = [this, Tstar, rstart, rend, mol1, mol2, &result, &time]() {
+    //            auto startTime = std::chrono::high_resolution_clock::now();
+    //            result = one_temperature<double>(Tstar, rstart, rend, mol1, mol2);
+    //            auto endTime = std::chrono::high_resolution_clock::now();
+    //            time = std::chrono::duration<double>(endTime - startTime).count();
+    //        };
+    //        m_pool->AddJob(one_temperature_job);
+    //        // Wait until all the threads finish...
+    //        m_pool->WaitAll();
+    //        return result;
+    //    }
+    //    else {
+    //        // Serial
+    //        return one_temperature(Tstar, rstart, rend, mol1, mol2);
+    //    }
+    //}
 };

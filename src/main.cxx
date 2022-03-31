@@ -16,7 +16,7 @@ using json = nlohmann::json;
 void check_EXP6(int order, double alpha, const std::string &filename) {
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
-    Integrator<double> i(m0, m1);
+    Integrator<double> i({ m0, m1 });
 
     std::ofstream ofs(filename);
 
@@ -45,7 +45,7 @@ void check_EXP6(int order, double alpha, const std::string &filename) {
     int NT = 200;
     std::vector<double> Tvec; double dT = (log(Tmax) - log(Tmin)) / (NT - 1); for (auto i = 0; i < NT; ++i) { Tvec.push_back(exp(log(Tmin) + dT * i)); }
     int Nderivs = 6;
-    const auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, Nderivs, Tvec, 0.0001, 200, i.mol1, i.mol2); // radius in sigma, B in sigma^3/molecule
+    const auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, Nderivs, Tvec, 0.0001, 200); // radius in sigma, B in sigma^3/molecule
 
     // write prettified JSON of results to output file
     std::ofstream o(filename);
@@ -55,24 +55,26 @@ void check_EXP6(int order, double alpha, const std::string &filename) {
 void check_LJ() {
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
-    Integrator<double> i(m0, m1);
+    Integrator<double> i({ m0, m1 });
     std::function<double(double)> f([](double r) {
         double rn6 = 1/(r*r*r*r*r*r); return 4.0*(rn6*rn6 - rn6); }
     );
+    
     i.get_evaluator().connect_potentials(f, 1/* number of sites */);
+    i.get_conf_view()["feval_max"] = 1e5;
     // B_2^*
     for (auto Tstar = 1.0; Tstar < 10; Tstar *= 2) {
         double h = 1e-100;
         auto radval = i.radial_integrate_B2(std::complex<double>(Tstar, h), 0.01, 1000, 10000);
         int order = 2, Nderivs = 2;
-        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.01, 1000, i.mol1, i.mol2);
+        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.01, 1000);
         std::cout << Tstar << "," << radval << "," << val["B"] << "," << val["dBdT"] << "," << val["d2BdT2"] << "," << Bstar_Mie(Tstar, 12, 6) << std::endl;
     }
     // B_3^*=B_3/sigma^6
     auto SQUARE = [](double x) { return x*x; };
     for (auto Tstar = 1.0; Tstar < 10; Tstar *= 2) {
         int order = 3, Nderivs = 2;
-        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.00001, 10000, i.mol1, i.mol2);
+        auto val = i.B_and_derivs(order, Nderivs, Tstar, 0.00001, 10000);
         std::cout << Tstar << "," << val["B"] << "+-" << val["error(B)"] << std::endl;
     }
 }
@@ -80,15 +82,17 @@ void check_LJ() {
 void Bntable(int order, double Tmin, double Tmax, double NT, const std::string &filename) {
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
-    Integrator<double> i(m0, m1);
+    Integrator<double> i({ m0, m1 });
     std::function<double(double)> f([](double r) { double rn6 = 1/(r*r*r*r*r*r); return 4.0*(rn6*rn6 - rn6); });
     i.get_evaluator().connect_potentials(f, 1/* number of sites */);
+    i.get_conf_view()["feval_max"] = 1e7;
+
     // B_3^*=B_3/sigma^6
     auto SQUARE = [](double x) { return x * x; };
     std::vector<double> Tvec; double dT = (log(Tmax)-log(Tmin))/(NT-1); for (auto i = 0; i < NT; ++i){ Tvec.push_back(exp(log(Tmin)+dT*i)); }
     std::ofstream ofs(filename);
     ofs << "T^* B^* dB^*/dT^* d2B^*/dT^*2 elapsed(s)" << std::endl;
-    auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, 2 /* Nderiv */, Tvec, 0.02, 1000, i.mol1, i.mol2); // radius in A, B in A^3/molecule
+    auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, 2 /* Nderiv */, Tvec, 0.02, 1000); // radius in A, B in A^3/molecule
     for (auto val : results) {
         auto B = val["B"];
         auto dBdT = val["dBdT"];
@@ -102,6 +106,7 @@ void Bntable(int order, double Tmin, double Tmax, double NT, const std::string &
 
 void check_N2(const std::string &filename) {
     auto integr = get_nitrogen();
+    integr.get_conf_view()["feval_max"] = 1e6;
     auto Nthreads = 1;
     auto Nderiv = 2;
     // The temperature values from Hellmann, MP, 2012, supporting information
@@ -112,7 +117,7 @@ void check_N2(const std::string &filename) {
         1400, 1450, 1500, 1600, 1700, 1800, 1900, 2000, 2200, 2400, 2600, 2800, 3000 };
     std::ofstream ofs(filename);
     ofs << "T/K B/cm^3/mol dB^*/dT^* d2B^*/dT^*2 elapsed(s)" << std::endl;
-    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
+    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100); // radius in A, B in A^3/molecule
     for (auto val : results) {
         auto B = (val["B"] + 2*M_PI/3*8) * 6.02214086e23 / 1e24;
         auto dBdT = val["dBdT"] * 6.02214086e23 / 1e24;
@@ -126,6 +131,7 @@ void check_N2(const std::string &filename) {
 /// Check the CO2 classical values against tabulated values
 void check_CO2_classical(const std::string& filename) {
     auto integr = HellmannCarbonDioxide::get_integrator();
+    integr.get_conf_view()["feval_max"] = 1e6;
     auto Nthreads = 6;
     auto Nderiv = 3;
     std::vector<double> Tvec, Bvals;
@@ -133,7 +139,7 @@ void check_CO2_classical(const std::string& filename) {
         Tvec.push_back(el.T_K);
         Bvals.push_back(el.B2cl_cm3mol);
     }
-    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
+    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100); // radius in A, B in A^3/molecule
     auto i = 0;
     for (auto &val : results) {
         val["B"] += 2*M_PI/3*8;
@@ -173,7 +179,7 @@ void check_CO2_model(const std::string &model, const std::string& filename) {
     auto Nderiv = 3;
     //std::vector<double> Tvec = { 250,275,300,325,400,500,600,800,1000,2000,4000,6000,8000,10000 };
     std::vector<double> Tvec = geomspace(250, 10000, 200);
-    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
+    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100); // radius in A, B in A^3/molecule
     auto i = 0;
     for (auto& val : results) {
         val["B"] += 2 * M_PI / 3 * 8;
@@ -199,7 +205,7 @@ void calculate_CO2(const std::string& filename) {
     double Tmin = 200, Tmax = 2e4, rmin = 2; // rmin in A
     int NT = 300;
     std::vector<double> Tvec; double dT = (log(Tmax) - log(Tmin)) / (NT - 1); for (auto i = 0; i < NT; ++i) { Tvec.push_back(exp(log(Tmin) + dT * i)); }
-    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100, integr.mol1, integr.mol2); // radius in A, B in A^3/molecule
+    auto results = integr.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, 2, 100); // radius in A, B in A^3/molecule
     // Add a hard core contribution for r from zero to 2 A separation
     for (auto& val : results) {
         val["B"] += 2*M_PI/3*std::pow(rmin, 3);
@@ -219,7 +225,7 @@ void LJChain(int N, double lsigma, const std::string &filename) {
     auto ETvec = exp(Eigen::ArrayXd::LinSpaced(Ntemps, log(Tmin), log(Tmax)));
     std::vector<double> Tvec(ETvec.size()); for (auto i = 0; i < ETvec.size(); i += 1) { Tvec[i] = ETvec[i]; }
     double rmin = 0.0000001;
-    auto results = i.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, rmin, 200, i.mol1, i.mol2);
+    auto results = i.parallel_B_and_derivs(2, Nthreads, Nderiv, Tvec, rmin, 200);
     for (auto val : results) {
         auto B = val["B"]+2*M_PI/3*pow(rmin,3);
         auto dBdT = val["dBdT"];
@@ -264,7 +270,7 @@ int main() {
     //check_EXP6(2, 14, "B2_alpha14_EXP6.csv");
     //check_EXP6(2, 15, "B2_alpha15_EXP6.csv");
     //check_EXP6(3, 13, "B3_alpha13_EXP6.csv");
-    //check_LJ();
+    check_LJ();
     //check_N2("results_N2.txt");
     //check_CO2_classical("classical_CO2.json");
     //check_Singh();
