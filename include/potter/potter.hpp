@@ -574,6 +574,85 @@ public:
         return make_output_tuple(Tstar, std::move(outval), std::move(outerr));
     }
 
+    template <typename TEMPTYPE>
+    std::tuple<TEMPTYPE, TEMPTYPE> one_temperature_B4(TEMPTYPE Tstar, TYPE rstart, TYPE rend) const {
+        // Some local typedefs to avoid typing
+        using SharedData = IntegrandHelper<TYPE, TEMPTYPE>;
+        SharedData shared(Tstar, mol_sys, potcls);
+
+        auto outval = allocate_buffer(Tstar), outerr = allocate_buffer(Tstar);
+
+        bool is_atomic = (get_mol(0).get_Natoms() == 1);
+        bool is_linear = true; // TODO: check if true with principal axes
+
+        int feval_max = 0;
+        if (m_conf.contains("feval_max")) {
+            feval_max = static_cast<int>(m_conf["feval_max"]);
+        }
+        else {
+            throw std::invalid_argument("Key \"feval_max\" must be specified in the configuration JSON");
+        }
+        
+
+        if (is_atomic) {
+            // Fourth virial coefficient: three parts B_4_1,B_4_2,B_4_3
+            std::vector<std::valarray<double>> vals = { allocate_buffer(Tstar), allocate_buffer(Tstar), allocate_buffer(Tstar) };
+            std::vector<std::valarray<double>> errs = { allocate_buffer(Tstar), allocate_buffer(Tstar), allocate_buffer(Tstar) };
+            
+            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
+            auto cubature_integrand_1 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *((SharedData*)(p_shared_data));
+                shared.atomic_B4_1_integrand(x[0], x[1], x[2], x[3], x[4], fval); // r14, r13, gamma, r12, eta
+                return 0; // success
+            };
+
+            auto cubature_integrand_2 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *((SharedData*)(p_shared_data));
+                shared.atomic_B4_2_integrand(x[0], x[1], x[2], x[3], x[4], fval); // eta, r12, r13, eta, r14
+                return 0; // success
+            };
+
+            auto cubature_integrand_3 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+                auto& shared = *((SharedData*)(p_shared_data));
+                shared.atomic_B4_3_integrand(x[0], x[1], x[2], x[3], x[4], x[5], fval); // eta, zeta, gamma, r12, r13, r14
+                return 0; // success
+            };
+
+            unsigned fdim = static_cast<unsigned>(vals[0].size()); // How many output dimensions
+
+            // Limits on r14, r13, gamma, r12, eta
+            // Limits on eta, r12, r13, eta, r14
+            // Limits on eta,zeta,gamma, r12, r13, r14
+            std::vector<std::valarray<double>> xmins = { {rstart, rstart, -1 , rstart, -1 }, { -1, rstart, rstart, -1 , rstart }, { -1,  rstart, -1 , rstart, rstart , rstart } };
+            std::vector<std::valarray<double>> xmaxs = { { rend, rend, 1 , rend, 1 }, { 1, rend, rend, 1 , rend }, { 1, 2 * M_PI, 1, rend, rend , rend } };
+
+            int naxes = 5; // How many dimensions the integral is taken over (r14, r13, gamma, r12, eta)
+            hcubature(fdim, cubature_integrand_1, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
+            hcubature(fdim, cubature_integrand_2, &shared, naxes, &(xmins[1][0]), &(xmaxs[1][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[1][0]), &(errs[1][0]));
+
+            naxes = 6;
+            hcubature(fdim, cubature_integrand_3, &shared, naxes, &(xmins[2][0]), &(xmaxs[2][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[2][0]), &(errs[2][0]));
+
+            // prefactors for each contribution 
+            std::valarray<double> pre_factors = { -3.0*(27.0/4.0), 3.0*(27.0/2.0), -27.0/(8.0*M_PI) };
+            for (auto i = 0; i < pre_factors.size(); ++i) {
+                vals[i] *= pre_factors[i];
+                errs[i] *= pre_factors[i];
+            }
+
+            // Copy into output
+            outval = vals[0] + vals[1] + vals[2];
+            outerr = std::abs(errs[0]) + std::abs(errs[1]) + std::abs(errs[2]);
+        }
+        else if (is_linear) {
+            throw std::invalid_argument("Not yet able to handle linear molecules");
+        }
+        else {
+            throw std::invalid_argument("Not yet able to handle non-linear molecules");
+        }
+        return make_output_tuple(Tstar, std::move(outval), std::move(outerr));
+    }
+
 
     /**
     Do the calculations for one temperature
@@ -582,8 +661,6 @@ public:
     @param Tstar The temperature
     @param rstart The initial value of r to be considered in integration
     @param rend The final value of r to be considered in integration
-    @param mol1 The first molecule
-    @param mol2 The second molecule
     @returns Tuple of (value, estimated error in value)
     @note The return numerical type maybe be one of double, std::complex<double> or MultiComplex<double>
     */
@@ -596,233 +673,11 @@ public:
         else if (order == 3) {
             return one_temperature_B3(Tstar, rstart, rend);
         }
-        
-        // Some local typedefs to avoid typing
-        using SharedData = IntegrandHelper<TYPE, TEMPTYPE>;
-
-        std::vector<std::valarray<double>> xmins, xmaxs;
-        switch (order)
-        {
-        case 2:
-            break;
-        case 3:{
-            // Check if three particles are given or not (if not proceed with atmoic b_3_integrand)
-            double rbreak = 1.3;
-            if (mol_sys.size() < 3)
-                xmins = { { rstart, rstart, -1 },{ rbreak, rstart, -1 } }, xmaxs = { { rbreak, rend, 1 },{ rend, rend, 1 } }; // Limits on r12, r13, eta
-            else
-            {    
-                xmins = { { 0 ,rstart,0,0,rstart,0,0,0,0 } }, xmaxs = { {  M_PI  , rend ,  M_PI , 2 * M_PI , rend , M_PI , 2 * M_PI ,  M_PI , 2 * M_PI } };
-            }
-            break;
-            }
-        case 4: {
-            // Limits on r14, r13, gamma, r12, eta
-            // Limits on eta, r12, r13, eta, r14
-            // Limits on eta,zeta,gamma, r12, r13, r14    
-            xmins = { {rstart, rstart, -1 , rstart, -1 }, { -1, rstart, rstart, -1 , rstart }, { -1,  rstart, -1 , rstart, rstart , rstart } };
-            xmaxs = { { rend, rend, 1 , rend, 1 }, { 1, rend, rend, 1 , rend }, { 1, 2 * M_PI, 1, rend, rend , rend } };
-            break; 
-        }
-        default:
-            break;
-        }
-        SharedData shared(Tstar, mol_sys, potcls);
-        
-        int ndim = 1; // If T is a floating point number (default)
-        std::valarray<double> outval, outerr;
-        std::vector<std::valarray<double >> vals(10), errs(10);
-        if constexpr (std::is_same<decltype(shared.Tstar), std::complex<double>>::value) {
-            ndim = 2;
-        }
-        else if constexpr (std::is_same<decltype(shared.Tstar), MultiComplex<double>>::value) {
-            ndim = static_cast<int>(shared.Tstar.get_coef().size());
-        }
-        // Fill with zero
-        for (auto& val : vals) {
-            val = std::valarray<double>(0.0, ndim);
-        }
-        for (auto& err : errs) {
-            err = std::valarray<double>(0.0, ndim);
-        }
-        outval = std::valarray<double>(0.0, ndim);
-        outerr = std::valarray<double>(0.0, ndim);
-
-        int feval_max = 0;
-        if (m_conf.contains("feval_max")) {
-            feval_max = static_cast<int>(m_conf["feval_max"]);
+        else if (order == 4) {
+            return one_temperature_B4(Tstar, rstart, rend);
         }
         else {
-            throw std::invalid_argument("Key \"feval_max\" must be specified in the configuration JSON");
-        }
-
-#if defined(ENABLE_CUBA)
-        switch (order) {
-        case 2:
-        {
-        }
-        case 3:
-        {
-        
-        if(mol_sys.size() < 3) {throw std::invalid_argument("For B3 calculation, 3 molecules are needed!");}
-
-            // third virial coefficient with cuba lib
-            auto Cuba_integrand_3D = [](const int* pndim, const cubareal x[], const int* pncomp, cubareal fval[], void* p_shared_data) {
-            auto& shared = *((class SharedData*)(p_shared_data));
-                
-            // particle one is at origin
-            // particle 1 orientation
-            double theta_1_o = x[0];
-            
-            // particle 2 location
-            double r_12 = x[1];
-
-            // particle 2 orientation
-            double theta_2_o = x[2]; double phi_2_o = x[3];
-
-            // particle 3 location
-            double r_13 = x[4];
-            double theta_3 = x[5]; double phi_3 = x[6];
-
-            // particle 3 orientation
-            double theta_3_o = x[7]; double phi_3_o = x[8];
-
-            double jacobian = 1.0;
-            for (auto i = 0; i < *pndim; ++i) {
-                auto range = shared.xmax[0][i] - shared.xmin[0][i];
-                jacobian *= range;
-            }
-
-            double theta_1_o_sc = shared.xmin[0][0] + x[0] * (shared.xmax[0][0] - shared.xmin[0][0]);
-            double r_12_sc      = shared.xmin[0][1] + x[1] * (shared.xmax[0][1] - shared.xmin[0][1]);
-            double theta_2_o_sc = shared.xmin[0][2] + x[2] * (shared.xmax[0][2] - shared.xmin[0][2]);
-            double phi_2_o_sc   = shared.xmin[0][3] + x[3] * (shared.xmax[0][3] - shared.xmin[0][3]);
-            double r_13_sc      = shared.xmin[0][4] + x[4] * (shared.xmax[0][4] - shared.xmin[0][4]);
-            double theta_3_sc   = shared.xmin[0][5] + x[5] * (shared.xmax[0][5] - shared.xmin[0][5]);
-            double phi_3_sc     = shared.xmin[0][6] + x[6] * (shared.xmax[0][6] - shared.xmin[0][6]);
-            double theta_3_o_sc = shared.xmin[0][7] + x[7] * (shared.xmax[0][7] - shared.xmin[0][7]);
-            double phi_3_o_sc   = shared.xmin[0][8] + x[8] * (shared.xmax[0][8] - shared.xmin[0][8]);
-        
-            shared.oriented_integrand_3D(theta_1_o_sc, r_12_sc, theta_2_o_sc, phi_2_o_sc, r_13_sc, theta_3_sc, phi_3_sc, theta_3_o_sc, phi_3_o_sc, fval);
-
-            for (auto i = 0; i < *pncomp; ++i) {
-                fval[i] *= jacobian;
-            }
-            return 0;
-        };
-
-        int NVEC = 1;
-        cubareal EPSREL = 1e-8;
-        cubareal EPSABS = 1e-12;
-        int VERBOSE = 0;
-        int LAST = 4;
-        int MINEVAL = 0;
-        int MAXEVAL = feval_max;
-        int NSTART = 10000;
-        int NINCREASE = 5000;
-        int NBATCH = 10000;
-        int GRIDNO = 0;
-        int SEED   = 0;
-        int NNEW   = 100;
-        int NMIN   = 100;
-        const char* STATEFILE = nullptr;
-        void* SPIN = nullptr;
-        int neval, fail;
-        cubareal integral[ndim], error[ndim], prob[ndim];
-        auto startTimeC = std::chrono::high_resolution_clock::now();
-          Vegas(9, ndim, Cuba_integrand_3D, &shared, NVEC,
-            EPSREL, EPSABS, VERBOSE, SEED,
-            MINEVAL, MAXEVAL, NSTART, NINCREASE, NBATCH,
-            GRIDNO, STATEFILE, SPIN,
-            &neval, &fail, integral, error, prob);
-
-        auto endTimeC = std::chrono::high_resolution_clock::now();
-        auto timeC = std::chrono::duration<double>(endTimeC - startTimeC).count();
-
-        double fac = -1.0/3.0 * (pow(2.0,3.0) * pow(M_PI,2.0))/(pow(4.0*M_PI,3.0));
-
-        auto test = fac*integral[0];
-        auto err = fac*error[0];
-        
-        std::cout << test << std::endl;
-        std::cout << err << std::endl;
-
-        for (auto i = 0; i < outval.size(); ++i) {
-            outval[i] = fac * integral[i];
-            outerr[i] = fac * error[i];
-        }
-        break;
-        }
-        default:
-            throw - 1;
-        }
-#else
-        // Use cubature to do the integration...
-
-        switch (order) {
-        case 2:
-        {}
-        case 3:
-        {}
-        case 4:
-        {
-            // Fourth virial coefficient: three parts B_4_1,B_4_2,B_4_3
-            // The integrand functions
-            //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
-            auto cubature_integrand_1 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-                auto& shared = *((SharedData*)(p_shared_data));
-                shared.atomic_B4_1_integrand(x[0], x[1], x[2], x[3], x[4], fval);
-                return 0; // success
-            };
-
-            auto cubature_integrand_2 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-                auto& shared = *((SharedData*)(p_shared_data));
-                shared.atomic_B4_2_integrand(x[0], x[1], x[2], x[3], x[4], fval);
-                return 0; // success
-            };
-
-            auto cubature_integrand_3 = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
-                auto& shared = *((SharedData*)(p_shared_data));
-                shared.atomic_B4_3_integrand(x[0], x[1], x[2], x[3], x[4], x[5], fval);
-                return 0; // success
-            };
-
-            // prefactors for each contribution 
-            std::valarray<double> pre_factors = {-3.0*(27.0/4.0), 3.0*(27.0/2.0), -27.0/(8.0*M_PI)};
-
-            int naxes = 5; // How many dimensions the integral is taken over (r14, r13, gamma, r12, eta)
-            hcubature(ndim, cubature_integrand_1, &shared, naxes, &(xmins[0][0]), &(xmaxs[0][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[0][0]), &(errs[0][0]));
-            hcubature(ndim, cubature_integrand_2, &shared, naxes, &(xmins[1][0]), &(xmaxs[1][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[1][0]), &(errs[1][0]));
-
-            naxes = 6;
-            hcubature(ndim, cubature_integrand_3, &shared, naxes, &(xmins[2][0]), &(xmaxs[2][0]), feval_max, 0, 1e-4, ERROR_INDIVIDUAL, &(vals[2][0]), &(errs[2][0]));
-
-            for (auto i = 0; i < pre_factors.size(); ++i) {
-                vals[i] *= pre_factors[i];
-                errs[i] *= pre_factors[i];
-            }
-
-            // Copy into output
-            outval = vals[0] + vals[1] + vals[2];
-            outerr = std::abs(errs[0]) + std::abs(errs[1]) + std::abs(errs[2]);
-
-            break;
-        }
-        default:
-            throw -1;
-        }
-#endif
-        if constexpr (std::is_same<decltype(Tstar), double>::value) {
-            // If T is double (real)
-            return std::make_tuple(outval[0],outerr[0]);
-        }
-        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-            // If T is a complex number (perhaps for complex step derivatives)
-            return std::make_tuple(decltype(Tstar)(outval[0], outval[1]), decltype(Tstar)(outerr[0], outerr[1]));
-        }
-        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-            // If T is a multicomplex number
-            return std::make_tuple(decltype(Tstar)(outval), decltype(Tstar)(outerr));
+            throw std::invalid_argument("This order is not supported");
         }
     }
     
