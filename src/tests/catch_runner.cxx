@@ -63,6 +63,7 @@ TEST_CASE("Basic integration problems", "[integration]") {
         auto exact = shared.c * 0.664669679781377;
         CHECK(exact == Approx(val[0]).margin(2 * err[0]));
     }
+#if defined(ENABLE_CUBA)
     SECTION("VEGAS") {
         struct Shared { double c = 10.0; } shared;
         potter::c_integrand_function g = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) -> int {
@@ -78,6 +79,7 @@ TEST_CASE("Basic integration problems", "[integration]") {
         auto [val, err] = potter::VEGAS<OutputType>(g, &shared, xmins, xmaxs, opt);
         CHECK(exact == Approx(val[0]).margin(2 * err[0]));
     };
+#endif
 }
 
 TEST_CASE("Benchmark basic integration problems", "[integration]") {
