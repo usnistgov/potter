@@ -316,5 +316,7 @@ TEST_CASE("Check B3 value against MacDowell et al for 2 center LJF") {
     auto B3 = val["B"];
     CAPTURE(B3_Lit[0]);
     CAPTURE(B3);
+    std::string sval = nlohmann::json(val).dump(2);
+    CAPTURE(sval);
     CHECK(std::abs(B3-B3_Lit[0]) < standarderr[0]*2);
 }
