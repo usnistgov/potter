@@ -374,6 +374,26 @@ public:
         return std::valarray<double>(0.0, ndim);
     }
 
+    template<typename TYPE>
+    auto make_output_tuple(const TYPE& Tstar, std::valarray<double> &&outval, std::valarray<double> &&outerr) const {
+        if constexpr (std::is_same<decltype(Tstar), double>::value) {
+            // If T is double (real)
+            return std::make_tuple(outval[0], outerr[0]);
+        }
+        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+            // If T is a complex number (perhaps for complex step derivatives)
+            return std::make_tuple(decltype(Tstar)(outval[0], outval[1]), decltype(Tstar)(outerr[0], outerr[1]));
+        }
+        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+            // If T is a multicomplex number
+            return std::make_tuple(decltype(Tstar)(outval), decltype(Tstar)(outerr));
+        }
+        else {
+            throw std::invalid_argument("Can't construct output tuple");
+            return std::make_tuple(decltype(Tstar)(outval), decltype(Tstar)(outerr));
+        }
+    }
+
     template <typename TEMPTYPE>
     std::tuple<TEMPTYPE, TEMPTYPE> one_temperature_B2(TEMPTYPE Tstar, TYPE rstart, TYPE rend) const {
         // Some local typedefs to avoid typing
@@ -453,19 +473,7 @@ public:
         else {
             throw std::invalid_argument("Not yet able to handle non-linear molecules");
         }
-
-        if constexpr (std::is_same<decltype(Tstar), double>::value) {
-            // If T is double (real)
-            return std::make_tuple(outval[0], outerr[0]);
-        }
-        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
-            // If T is a complex number (perhaps for complex step derivatives)
-            return std::make_tuple(decltype(Tstar)(outval[0], outval[1]), decltype(Tstar)(outerr[0], outerr[1]));
-        }
-        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
-            // If T is a multicomplex number
-            return std::make_tuple(decltype(Tstar)(outval), decltype(Tstar)(outerr));
-        }
+        return make_output_tuple(Tstar, std::move(outval), std::move(outerr));
     }
 
     /**
