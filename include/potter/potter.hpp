@@ -522,7 +522,7 @@ public:
                 outval += vals; outerr += std::abs(errs);
             }
             // Rescale with the leading factor
-            outval *= 8 * M_PI * M_PI / 3; outerr *= 8 * M_PI * M_PI / 3;
+            outval *= 8*M_PI*M_PI/3; outerr *= 8*M_PI*M_PI/3;
         }
         else if (is_linear) {
             std::valarray<double> xmins = { 0 ,rstart,0,0,rstart,0,0,0,0 };
@@ -565,7 +565,7 @@ public:
 
             // Copy into output
             // ....
-            double fac = -1.0 / 3.0 * (pow(2.0, 3.0) * pow(M_PI, 2.0)) / (pow(4.0 * M_PI, 3.0));
+            double fac = -1.0/3.0*(pow(2.0, 3.0)*pow(M_PI, 2.0))/(pow(4.0*M_PI, 3.0));
             outval *= fac; outerr *= fac;
         }
         else {
