@@ -523,7 +523,8 @@ public:
                 outval += vals; outerr += std::abs(errs);
             }
             // Rescale with the leading factor
-            outval *= 8*M_PI*M_PI/3; outerr *= 8*M_PI*M_PI/3;
+            double fac = 8*M_PI*M_PI/3;
+            outval *= fac; outerr *= fac;
         }
         else if (is_linear) {
             std::valarray<double> xmins = { 0 ,rstart,0,0,rstart,0,0,0,0 };
