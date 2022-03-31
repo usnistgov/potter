@@ -375,22 +375,22 @@ public:
     }
 
     template<typename TYPE>
-    auto make_output_tuple(const TYPE& Tstar, std::valarray<double> &&outval, std::valarray<double> &&outerr) const {
-        if constexpr (std::is_same<decltype(Tstar), double>::value) {
+    auto make_output_tuple(const TYPE& Tstar, const std::valarray<double> &outval, const std::valarray<double> &outerr) const {
+        if constexpr (std::is_same_v<TYPE, double>) {
             // If T is double (real)
             return std::make_tuple(outval[0], outerr[0]);
         }
-        else if constexpr (std::is_same<decltype(Tstar), std::complex<double>>::value) {
+        else if constexpr (std::is_same_v<TYPE, std::complex<double>>) {
             // If T is a complex number (perhaps for complex step derivatives)
-            return std::make_tuple(decltype(Tstar)(outval[0], outval[1]), decltype(Tstar)(outerr[0], outerr[1]));
+            return std::make_tuple(TYPE(outval[0], outval[1]), TYPE(outerr[0], outerr[1]));
         }
-        else if constexpr (std::is_same<decltype(Tstar), MultiComplex<double>>::value) {
+        else if constexpr (std::is_same_v<TYPE, MultiComplex<double>>) {
             // If T is a multicomplex number
-            return std::make_tuple(decltype(Tstar)(outval), decltype(Tstar)(outerr));
+            return std::make_tuple(TYPE(outval), TYPE(outerr));
         }
         else {
             throw std::invalid_argument("Can't construct output tuple");
-            return std::make_tuple(decltype(Tstar)(outval), decltype(Tstar)(outerr));
+            return std::make_tuple(TYPE(outval), TYPE(outerr));
         }
     }
 
