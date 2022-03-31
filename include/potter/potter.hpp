@@ -100,18 +100,18 @@ public:
     /**
     * Take the variable a and unpack it into the double buffer
     */
-    template<typename TYPE>
-    void unpack_f(const TYPE &a, double *fval) {
-        if constexpr (std::is_same<TYPE, double>::value) {
+    template<typename T>
+    void unpack_f(const T &a, double *fval) {
+        if constexpr (std::is_same<T, double>::value) {
             // If T is double (real)
             fval[0] = a;
         }
-        else if constexpr (std::is_same<TYPE, std::complex<double>>::value) {
+        else if constexpr (std::is_same<T, std::complex<double>>::value) {
             // If T is a complex number (perhaps for complex step derivatives)
             fval[0] = a.real();
             fval[1] = a.imag();
         }
-        else if constexpr (std::is_same<TYPE, MultiComplex<double>>::value) {
+        else if constexpr (std::is_same<T, MultiComplex<double>>::value) {
             // If T is a multicomplex number
             auto& c = a.get_coef();
             for (auto i = 0; i < c.size(); ++i) {
@@ -342,9 +342,9 @@ public:
     /**
     * Calculate the orientationally-averaged potential
     */
-    TYPE orientationally_averaged_potential(TYPE rstar, Molecule<TYPE> mol1, Molecule<TYPE> mol2) const {
+    TYPE orientationally_averaged_potential(TYPE rstar) const {
         using Helper = IntegrandHelper<TYPE, double>;
-        Helper Helper(0.0, 0.0, mol1, mol2, potcls);
+        Helper helper(0.0, mol_sys, potcls);
         //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
         auto f_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
             auto& shared = *((class helper*)(p_shared_data));
@@ -352,46 +352,46 @@ public:
             shared.oriented_integrand(theta1, theta2, phi, fval);
             return 0; // success
         };
-        shared.rstar = rstar;
+        helper.rstar = rstar;
         int ndim = 1;
         std::valarray<double> val(0.0, 4), err(0.0, 4);
-        hcubature(ndim, f_integrand, &shared, 3, &(shared.xmin[0]), &(shared.xmax[0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
+        hcubature(ndim, f_integrand, &helper, 3, &(helper.xmin[0]), &(helper.xmax[0]), 100000, 0, 1e-13, ERROR_INDIVIDUAL, &(val[0]), &(err[0]));
         return val[0]/(8*M_PI);
     }
 
-    template<typename TYPE>
-    auto allocate_buffer(const TYPE & Tstar) const {
+    template<typename T>
+    auto allocate_buffer(const T & Tstar) const {
         std::size_t ndim = 0;
-        if constexpr (std::is_same<TYPE, double>::value) {
+        if constexpr (std::is_same<T, double>::value) {
             ndim = 1;
         }
-        else if constexpr (std::is_same<TYPE, std::complex<double>>::value) {
+        else if constexpr (std::is_same<T, std::complex<double>>::value) {
             ndim = 2;
         }
-        else if constexpr (std::is_same<TYPE, MultiComplex<double>>::value) {
+        else if constexpr (std::is_same<T, MultiComplex<double>>::value) {
             ndim = static_cast<int>(Tstar.get_coef().size());
         }
         return std::valarray<double>(0.0, ndim);
     }
 
     /// A helper function to make the output tuple in the right type
-    template<typename TYPE>
-    auto make_output_tuple(const TYPE& Tstar, const std::valarray<double> &outval, const std::valarray<double> &outerr) const {
+    template<typename T>
+    auto make_output_tuple(const T& Tstar, const std::valarray<double> &outval, const std::valarray<double> &outerr) const {
         if constexpr (std::is_same_v<TYPE, double>) {
             // If T is double (real)
             return std::make_tuple(outval[0], outerr[0]);
         }
-        else if constexpr (std::is_same_v<TYPE, std::complex<double>>) {
+        else if constexpr (std::is_same_v<T, std::complex<double>>) {
             // If T is a complex number (perhaps for complex step derivatives)
-            return std::make_tuple(TYPE(outval[0], outval[1]), TYPE(outerr[0], outerr[1]));
+            return std::make_tuple(T(outval[0], outval[1]), T(outerr[0], outerr[1]));
         }
-        else if constexpr (std::is_same_v<TYPE, MultiComplex<double>>) {
+        else if constexpr (std::is_same_v<T, MultiComplex<double>>) {
             // If T is a multicomplex number
-            return std::make_tuple(TYPE(outval), TYPE(outerr));
+            return std::make_tuple(T(outval), T(outerr));
         }
         else {
             throw std::invalid_argument("Can't construct output tuple");
-            return std::make_tuple(TYPE(outval), TYPE(outerr));
+            return std::make_tuple(T(outval), T(outerr));
         }
     }
 
@@ -435,7 +435,7 @@ public:
 
             // The integrand function
             //typedef int (*integrand) (unsigned ndim, const double *x, void *, unsigned fdim, double* fval);
-            auto cubature_B2_integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+            potter::c_integrand_function integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
                 auto& shared = *static_cast<SharedData*>(p_shared_data);
                 double theta1 = x[0], theta2 = x[1], phi = x[2];
                 shared.rstar = x[3];
@@ -460,9 +460,9 @@ public:
             opt["FDIM"] = fdim;
             opt["NDIM"] = naxes;
             opt["MAXEVAL"] = feval_max;
-            std::tie(outval, outerr) = potter::VEGAS<OutputType>(g, &shared, xmins, xmaxs, opt);
+            std::tie(outval, outerr) = potter::VEGAS<decltype(outval)>(integrand, &shared, xmins, xmaxs, opt);
 #else
-            hcubature(fdim, cubature_B2_integrand, &shared, naxes, &(xmins[0]), &(xmaxs[0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(outval[0]), &(outerr[0]));
+            hcubature(fdim, integrand, &shared, naxes, &(xmins[0]), &(xmaxs[0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(outval[0]), &(outerr[0]));
 #endif
 
             // Copy into output
@@ -530,7 +530,7 @@ public:
             std::valarray<double> xmaxs = { M_PI, rend, M_PI, 2*M_PI , rend , M_PI , 2 * M_PI ,  M_PI , 2 * M_PI };
 
             // The integrand function
-            auto integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
+            potter::c_integrand_function integrand = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) {
                 auto& shared = *static_cast<SharedData*>(p_shared_data);
                 // particle 1 orientation
                 double theta_1_o = x[0];
@@ -559,7 +559,7 @@ public:
             opt["FDIM"] = fdim;
             opt["NDIM"] = naxes;
             opt["MAXEVAL"] = feval_max;
-            std::tie(outval, outerr) = potter::VEGAS<OutputType>(g, &shared, xmins, xmaxs, opt);
+            std::tie(outval, outerr) = potter::VEGAS<decltype(outval)>(integrand, &shared, xmins, xmaxs, opt);
 #else
             hcubature(fdim, integrand, &shared, naxes, &(xmins[0]), &(xmaxs[0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(outval[0]), &(outerr[0]));
 #endif
@@ -653,7 +653,6 @@ public:
         }
         return make_output_tuple(Tstar, std::move(outval), std::move(outerr));
     }
-
 
     /**
     Do the calculations for one temperature
