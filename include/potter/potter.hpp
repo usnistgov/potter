@@ -559,6 +559,11 @@ public:
             opt["FDIM"] = fdim;
             opt["NDIM"] = naxes;
             opt["MAXEVAL"] = feval_max;
+            for (std::string k : {"NSTART", "NINCREASE", "NBATCH"}){
+                if (m_conf.contains(k)){
+                    opt[k] = m_conf[k];
+                }
+            }
             std::tie(outval, outerr) = potter::VEGAS<decltype(outval)>(integrand, &shared, xmins, xmaxs, opt);
 #else
             hcubature(fdim, integrand, &shared, naxes, &(xmins[0]), &(xmaxs[0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(outval[0]), &(outerr[0]));
