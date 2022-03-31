@@ -38,7 +38,7 @@ auto get_integrator() {
     };
 
     // Connect up the lambda functions for site-site interactions
-    Integrator<double> integr(m0, m0);
+    Integrator<double> integr({m0, m0});
     for (auto i = 0; i < qs.size(); ++i) {
         auto chari = types[i];
         auto q_i = qs[i];
@@ -1453,7 +1453,7 @@ namespace CarbonDioxide {
         };
 
         // Connect up the lambda functions for site-site interactions
-        Integrator<double> integr(m0, m0);
+        Integrator<double> integr({m0, m0});
         for (auto i = 0; i < types.size(); ++i) {
             auto chari = types[i];
             for (auto j = 0; j < types.size(); ++j) {
@@ -1570,7 +1570,7 @@ namespace CarbonDioxide {
         };
 
         // Connect up the lambda functions for site-site interactions
-        Integrator<double> integr(m0, m0);
+        Integrator<double> integr({m0, m0});
         for (auto i = 0; i < types.size(); ++i) {
             auto chari = types[i];
             for (auto j = 0; j < types.size(); ++j) {
@@ -1670,7 +1670,7 @@ namespace CarbonDioxide {
         };
 
         // Connect up the lambda functions for site-site interactions
-        Integrator<double> integr(m0, m0);
+        Integrator<double> integr({m0, m0});
         for (auto i = 0; i < types.size(); ++i) {
             auto chari = types[i];
             for (auto j = 0; j < types.size(); ++j) {
