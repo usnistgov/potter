@@ -243,7 +243,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
 //
 //	std::vector<std::vector<double>> coords0 = { {0,0,0} };
 //	Molecule<double> m0(coords0), m1(coords0);
-//	Integrator<double> i(m0, m1);
+//    Integrator<double> i({ m0, m1 });
 //    i.get_conf_view()["feval_max"] = 1e7;
 //	std::function<double(double)> f([](double r) {
 //		double rn6 = 1 / (r*r*r*r*r*r); return 4.0*(rn6*rn6 - rn6); }
@@ -257,7 +257,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
 //
 //	for (auto k = 0; k < Tstar.size(); ++k) {
 //		int order = 4, Nderivs = 0;
-//		auto val = i.B_and_derivs(order, Nderivs, Tstar[k], 1e-5, 400, i.mol1, i.mol2);
+//		auto val = i.B_and_derivs(order, Nderivs, Tstar[k], 1e-5, 400);
 //		auto B4 = val["B"];
 //		auto B4err_potter = val["error(B)"];
 //
