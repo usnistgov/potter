@@ -433,7 +433,16 @@ public:
             }
             unsigned naxes = 4; // How many dimensions the integral is taken over (theta, phi1, phi2, r)
             unsigned fdim = static_cast<unsigned>(outval.size()); // How many output dimensions
+
+#if defined(ENABLE_CUBA)
+            auto opt = potter::get_VEGAS_defaults();
+            opt["FDIM"] = fdim;
+            opt["NDIM"] = naxes;
+            opt["MAXEVAL"] = feval_max;
+            std::tie(outval, outerr) = potter::VEGAS<OutputType>(g, &shared, xmins, xmaxs, opt);
+#else
             hcubature(fdim, cubature_B2_integrand, &shared, naxes, &(xmins[0]), &(xmaxs[0]), feval_max, 0, 1e-13, ERROR_INDIVIDUAL, &(outval[0]), &(outerr[0]));
+#endif
 
             // Copy into output
             // ....
@@ -538,65 +547,10 @@ public:
             throw std::invalid_argument("Key \"feval_max\" must be specified in the configuration JSON");
         }
 
-        
-
 #if defined(ENABLE_CUBA)
         switch (order) {
         case 2:
         {
-        auto Cuba_integrand = [](const int *pndim, const cubareal x[], const int *pncomp, cubareal fval[], void *p_shared_data) {
-            auto& shared = *((class SharedData*)(p_shared_data));
-            
-            double theta1, theta2, phi, r;
-            double jacobian = 1.0;
-            for (auto i  = 0; i < *pndim; ++i){
-                auto range = shared.xmax[0][i] - shared.xmin[0][i];
-                jacobian *= range;
-            }
-            theta1 = shared.xmin[0][0] + x[0] * (shared.xmax[0][0] - shared.xmin[0][0]);
-            theta2 = shared.xmin[0][1] + x[1] * (shared.xmax[0][1] - shared.xmin[0][1]);
-            phi = shared.xmin[0][2] + x[2] * (shared.xmax[0][2] - shared.xmin[0][2]);
-            r = shared.xmin[0][3] + x[3] * (shared.xmax[0][3] - shared.xmin[0][3]);
-            shared.rstar = r;
-            shared.oriented_integrand(theta1, theta2, phi, fval);
-            for (auto i = 0; i < *pncomp; ++i){
-                fval[i] *= jacobian;
-            }
-            return 0; // success
-        };
-        
-        int NVEC = 1;
-        cubareal EPSREL = 1e-8;
-        cubareal EPSABS = 1e-12;
-        int VERBOSE = 0;
-        int LAST = 4;
-        int MINEVAL = 0;
-        int MAXEVAL = feval_max;
-        int NSTART = 1000;
-        int NINCREASE = 500;
-        int NBATCH = 1000;
-        int GRIDNO = 0;
-        int SEED   = 0;
-        const char* STATEFILE = nullptr;
-        void* SPIN = nullptr;
-        int neval, fail;
-        cubareal integral[ndim], error[ndim], prob[ndim];
-        auto startTimeC = std::chrono::high_resolution_clock::now();
-          Vegas(4, ndim, Cuba_integrand, &shared, NVEC,
-            EPSREL, EPSABS, VERBOSE, SEED,
-            MINEVAL, MAXEVAL, NSTART, NINCREASE, NBATCH,
-            GRIDNO, STATEFILE, SPIN,
-            &neval, &fail, integral, error, prob);
-        auto endTimeC = std::chrono::high_resolution_clock::now();
-        auto timeC = std::chrono::duration<double>(endTimeC - startTimeC).count(); 
-
-        // The quadruple integral needs to be divided by 8*pi, but the leading term in the
-        // expression for B_2 is -2\pi, so factor becomes -1/4, or -0.25
-        for (auto i = 0; i < outval.size(); ++i) {
-            outval[i] = -0.25 * integral[i];
-            outerr[i] = -0.25 * error[i];
-        }
-        break;
         }
         case 3:
         {
