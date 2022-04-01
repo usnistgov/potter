@@ -320,3 +320,22 @@ TEST_CASE("Check B3 value against MacDowell et al for 2 center LJF") {
     CAPTURE(sval);
     CHECK(std::abs(B3-B3_Lit[0]) < standarderr[0]*2);
 }
+
+TEST_CASE("Test family","[family]") {
+    auto integr = get_rigidLJChain(7, 1.0);
+    auto molA = integr.get_mol(0), molB = integr.get_mol(1);
+
+    SECTION("atomic L-J") {
+        std::vector<std::vector<double>> coords0 = { {0,0,0} };
+        Molecule<double> m0(coords0);
+        CHECK(m0.get_family() == Molecule<double>::family::atomic);
+    };
+    SECTION("atomic chain") {
+        auto mol = get_rigidLJChain(1, 1.0).get_mol(0);
+        CHECK(mol.get_family() == Molecule<double>::family::atomic);
+    };
+    SECTION("chain") {
+        auto mol = get_rigidLJChain(7, 1.0).get_mol(0);
+        CHECK(mol.get_family() == Molecule<double>::family::linear);
+    };
+}

@@ -404,7 +404,8 @@ public:
         
         bool is_atomic = (get_mol(0).get_Natoms() == 1);
         SharedData shared(Tstar, mol_sys, potcls);
-        bool is_linear = true; // TODO: check if true with principal axes
+        using family = typename Molecule<TYPE>::family;
+        bool is_linear = (get_mol(0).get_family() == family::linear);
 
         if (is_atomic) {
             // The integrand function
@@ -486,7 +487,8 @@ public:
 
         bool is_atomic = (get_mol(0).get_Natoms() == 1);
         SharedData shared(Tstar, mol_sys, potcls);
-        bool is_linear = true; // TODO: check if true with principal axes
+        using family = typename Molecule<TYPE>::family;
+        bool is_linear = (get_mol(0).get_family() == family::linear);
 
         int feval_max = 0;
         if (m_conf.contains("feval_max")) {
@@ -590,7 +592,8 @@ public:
         auto outval = allocate_buffer(Tstar), outerr = allocate_buffer(Tstar);
 
         bool is_atomic = (get_mol(0).get_Natoms() == 1);
-        bool is_linear = true; // TODO: check if true with principal axes
+        using family = typename Molecule<TYPE>::family;
+        bool is_linear = (get_mol(0).get_family() == family::linear);
 
         int feval_max = 0;
         if (m_conf.contains("feval_max")) {

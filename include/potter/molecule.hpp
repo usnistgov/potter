@@ -5,6 +5,7 @@ namespace potter {
     class Molecule {
 
     public:
+        enum class family {not_defined, atomic, linear, nonlinear};
         using EColArray = Eigen::Array<TYPE, Eigen::Dynamic, 1>;
         using CoordMatrix = Eigen::Array<TYPE, 3, Eigen::Dynamic>;
         CoordMatrix coords, coords_initial;
@@ -22,6 +23,21 @@ namespace potter {
         void reset() {
             coords = coords_initial;
         };
+
+        // Determine the family of the molecule, either atomic, linear, or nonlinear
+        family get_family() const{
+            if (get_Natoms() == 1){
+                return family::atomic;
+            }
+            else{
+                Eigen::JacobiSVD<Eigen::MatrixXd> svd(coords_initial.matrix(), Eigen::ComputeThinU | Eigen::ComputeThinV);
+                auto singularValues = svd.singularValues(); // Sorted in decreasing magnitude
+                int nonzerovalues = ((singularValues.array()/singularValues.array()(0)).cwiseAbs().eval() > 1e-14).cast<int>().sum();
+                // A linear molecule if one non-zero singular value in SVD of coordinates
+                return (nonzerovalues == 1) ? family::linear : family::nonlinear;
+            }
+        }
+        
         CoordMatrix rotZ3(TYPE theta) const {
             // Rotation matrix for rotation around the z axis in 3D
             // See https://en.wikipedia.org/wiki/Rotation_matrix#Basic_rotations
