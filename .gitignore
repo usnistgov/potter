@@ -1,2 +1,5 @@
 /bld
+/build
+/externals/Cuba-4.2
 /bldnix
+/**/*.pyc
