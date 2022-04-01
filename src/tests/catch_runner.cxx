@@ -63,6 +63,7 @@ TEST_CASE("Basic integration problems", "[integration]") {
         auto exact = shared.c * 0.664669679781377;
         CHECK(exact == Approx(val[0]).margin(2 * err[0]));
     }
+#if defined(ENABLE_CUBA)
     SECTION("VEGAS") {
         struct Shared { double c = 10.0; } shared;
         potter::c_integrand_function g = [](unsigned ndim, const double* x, void* p_shared_data, unsigned fdim, double* fval) -> int {
@@ -78,6 +79,7 @@ TEST_CASE("Basic integration problems", "[integration]") {
         auto [val, err] = potter::VEGAS<OutputType>(g, &shared, xmins, xmaxs, opt);
         CHECK(exact == Approx(val[0]).margin(2 * err[0]));
     };
+#endif
 }
 
 TEST_CASE("Benchmark basic integration problems", "[integration]") {
@@ -170,7 +172,7 @@ TEST_CASE("Check CO2 values", "[B_2],[CO2]") {
             if (i % 10 == 0 && row.T_K > 600) {
                 auto actual = row.B2cl_cm3mol;
                 auto rmin_A = 2.0;
-                auto B = pot.B_and_derivs(2, 1, row.T_K, rmin_A, 100, pot.mol1, pot.mol2)["B"];
+                auto B = pot.B_and_derivs(2, 1, row.T_K, rmin_A, 100)["B"];
                 auto check = (B + 2 * M_PI / 3 * pow(rmin_A, 3)) * 6.02214086e23 / 1e24; // cm^3/mol
                 CHECK(std::abs(actual - check) < std::abs(actual) * 0.01);
             }
@@ -183,7 +185,7 @@ TEST_CASE("Check B_2 values against Singh&Kofke values", "[B_2]") {
 
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
-    Integrator<double> i(m0, m1);
+    Integrator<double> i({m0, m1});
     i.get_conf_view()["feval_max"] = 1e6;
     std::function<double(double)> f([](double r) {
         double rn6 = 1/(r*r*r*r*r*r); return 4.0 * (rn6*rn6 - rn6); }
@@ -197,7 +199,7 @@ TEST_CASE("Check B_2 values against Singh&Kofke values", "[B_2]") {
 
     for (auto k = 0; k < Tstar.size(); ++k) {
         int order = 2, Nderivs = 0;
-        auto val = i.B_and_derivs(order, Nderivs, Tstar[k], 0.00001, 10000, i.mol1, i.mol2);
+        auto val = i.B_and_derivs(order, Nderivs, Tstar[k], 0.00001, 10000);
         auto B2 = val["B"];
         auto B2err_potter = val["error(B)"];
 
@@ -212,7 +214,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
 
     std::vector<std::vector<double>> coords0 = { {0,0,0} };
     Molecule<double> m0(coords0), m1(coords0);
-    Integrator<double> i(m0, m1);
+    Integrator<double> i({ m0, m1 });
     i.get_conf_view()["feval_max"] = 1e7;
     std::function<double(double)> f([](double r) {
         double rn6 = 1/(r*r*r*r*r*r); return 4.0*(rn6*rn6 - rn6); }
@@ -226,7 +228,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
 
     for (auto k = 0; k < Tstar.size(); ++k) {
         int order = 3, Nderivs = 0;
-        auto val = i.B_and_derivs(order, Nderivs, Tstar[k], 0.00001, 10000, i.mol1, i.mol2);
+        auto val = i.B_and_derivs(order, Nderivs, Tstar[k], 0.00001, 10000);
         auto B3 = val["B"];
         auto B3err_potter = val["error(B)"];
 
@@ -241,7 +243,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
 //
 //	std::vector<std::vector<double>> coords0 = { {0,0,0} };
 //	Molecule<double> m0(coords0), m1(coords0);
-//	Integrator<double> i(m0, m1);
+//    Integrator<double> i({ m0, m1 });
 //    i.get_conf_view()["feval_max"] = 1e7;
 //	std::function<double(double)> f([](double r) {
 //		double rn6 = 1 / (r*r*r*r*r*r); return 4.0*(rn6*rn6 - rn6); }
@@ -255,7 +257,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
 //
 //	for (auto k = 0; k < Tstar.size(); ++k) {
 //		int order = 4, Nderivs = 0;
-//		auto val = i.B_and_derivs(order, Nderivs, Tstar[k], 1e-5, 400, i.mol1, i.mol2);
+//		auto val = i.B_and_derivs(order, Nderivs, Tstar[k], 1e-5, 400);
 //		auto B4 = val["B"];
 //		auto B4err_potter = val["error(B)"];
 //
@@ -268,7 +270,7 @@ TEST_CASE("Check B_3 values against Singh&Kofke values", "[B_3]") {
 
 TEST_CASE("Benchmark transformations","[bench]") {
     auto integr = get_rigidLJChain(7, 1.0);
-    auto molA = integr.mol1, molB = integr.mol2;
+    auto molA = integr.get_mol(0), molB = integr.get_mol(1);
 
     BENCHMARK("reset") {
         molA.reset();
@@ -302,12 +304,19 @@ TEST_CASE("Benchmark transformations","[bench]") {
 TEST_CASE("Check B3 value against MacDowell et al for 2 center LJF") {
     auto i = get_rigidMieChain(2, 12, 0.6 , 3);
     i.get_conf_view()["feval_max"] = 100000000;
-    auto Nthreads = 1; 
+    i.get_conf_view()["NSTART"] = 10000;
+    i.get_conf_view()["NINCREASE"] = 5000;
+    i.get_conf_view()["NBATCH"] = 10000;
+
     auto Nderiv = 0;
     std::vector<double> T = { 2.59147 };
     std::vector<double> B3_Lit = {8.54};
     std::vector<double> standarderr = {0.01};
-    auto val = i.B_and_derivs(3, Nderiv, T[0] , 0.0001, 150 , i.mol1, i.mol2);
+    auto val = i.B_and_derivs(3, Nderiv, T[0] , 0.0001, 150);
     auto B3 = val["B"];
+    CAPTURE(B3_Lit[0]);
+    CAPTURE(B3);
+    std::string sval = nlohmann::json(val).dump(2);
+    CAPTURE(sval);
     CHECK(std::abs(B3-B3_Lit[0]) < standarderr[0]*2);
 }

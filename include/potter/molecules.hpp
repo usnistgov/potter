@@ -33,7 +33,7 @@ auto get_nitrogen() {
     };
 
     // Connect up the lambda functions for site-site interactions
-    Integrator<double> integr(m0, m0);
+    Integrator<double> integr({m0, m0});
     for (auto i = 0; i < 5; ++i) {
         auto chari = types[i];
         auto q_i = qs[i];
@@ -494,7 +494,7 @@ auto get_rigidLJChain(int N, double r_site_site) {
         coords0.push_back({ x, 0, 0 });
     }
     Molecule<double> molA(coords0), molB(coords0);
-    Integrator<double> i(molA, molB);
+    Integrator<double> i({molA, molB});
 
     auto& conf = i.get_conf_view();
     conf["feval_max"] = 1e7;
@@ -568,7 +568,7 @@ namespace GenericModels {
         };
 
         // Connect up the lambda functions for site-site interactions
-        Integrator<double> integr(m0, m0);
+        Integrator<double> integr({m0, m0});
         for (auto i = 0; i < types.size(); ++i) {
             auto chari = types[i];
             for (auto j = 0; j < types.size(); ++j) {
