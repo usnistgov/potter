@@ -36,10 +36,11 @@ add_library(cubature STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/externals/cubature-master/hcubature.c")
 
 add_executable(potter "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cxx")
+target_link_libraries(potter PRIVATE cubature)
 if (MSVC)
     target_sources(potter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/externals/Eigen/debug/msvc/eigen.natvis")
 else()
-    target_link_libraries(potter PRIVATE "cuba" PRIVATE cubature)
+    target_link_libraries(potter PRIVATE "cuba")
 endif()
 
 if (NOT MSVC)
@@ -50,8 +51,9 @@ if (NOT MSVC)
 endif()
 
 add_executable(catchtest "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/catch_runner.cxx")
+target_link_libraries(catchtest PRIVATE cubature)
 if (NOT MSVC)
-    target_link_libraries(catchtest PRIVATE "cuba" PRIVATE cubature)
+    target_link_libraries(catchtest PRIVATE "cuba")
 endif()
 
 macro(add_nix_libraries target)
