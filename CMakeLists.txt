@@ -4,20 +4,20 @@ project(potter)
 set(CMAKE_CXX_STANDARD 17)
 
 if (NOT MSVC)
-    set(ZIPFN "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2.tar.gz")
-    set(OUTFN "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2/libcuba.a")
+    set(ZIPFN "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2.2.tar.gz")
+    set(OUTFN "${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2.2/libcuba.a")
     if(NOT EXISTS ${OUTFN})
         execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xf ${ZIPFN}
                       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals)
         message(STATUS "Untarred Cuba 4.2")
         execute_process(COMMAND "./configure"
-                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2)
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2.2)
         execute_process(COMMAND make
-                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2)
+                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2.2)
         message(STATUS "Built Cuba 4.2")
     endif()
-    link_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
-    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2")
+    link_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2.2")
+    include_directories("${CMAKE_CURRENT_SOURCE_DIR}/externals/Cuba-4.2.2")
     add_definitions(-DENABLE_CUBA)
 else()
     # With MSVC, can't use Cuba, and use cubature instead
