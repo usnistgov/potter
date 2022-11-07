@@ -377,7 +377,7 @@ public:
     /// A helper function to make the output tuple in the right type
     template<typename T>
     auto make_output_tuple(const T& Tstar, const std::valarray<double> &outval, const std::valarray<double> &outerr) const {
-        if constexpr (std::is_same_v<TYPE, double>) {
+        if constexpr (std::is_same_v<T, double>) {
             // If T is double (real)
             return std::make_tuple(outval[0], outerr[0]);
         }
