@@ -1,14 +1,15 @@
 // This file is part of Eigen, a lightweight C++ template library
 // for linear algebra.
 //
-// Copyright (C) 2018 Gael Guennebaud <gael.guennebaud@inria.fr>
+// Copyright (C) 2018-2019 Gael Guennebaud <gael.guennebaud@inria.fr>
 //
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#include <numeric>
 #include "main.h"
+#include <iterator>
+#include <numeric>
 
 template< class Iterator >
 std::reverse_iterator<Iterator>
@@ -45,6 +46,18 @@ bool is_pointer_based_stl_iterator(const internal::pointer_based_stl_iterator<Xp
 
 template<typename XprType>
 bool is_generic_randaccess_stl_iterator(const internal::generic_randaccess_stl_iterator<XprType> &) { return true; }
+
+template<typename Iter>
+bool is_default_constructible_and_assignable(const Iter& it)
+{
+#if EIGEN_HAS_CXX11
+  VERIFY(std::is_default_constructible<Iter>::value);
+  VERIFY(std::is_nothrow_default_constructible<Iter>::value);
+#endif
+  Iter it2;
+  it2 = it;
+  return (it==it2);
+}
 
 template<typename Xpr>
 void check_begin_end_for_loop(Xpr xpr)
@@ -122,6 +135,22 @@ void test_stl_iterators(int rows=Rows, int cols=Cols)
   RowMatrixType B = RowMatrixType::Random(rows,cols);
   
   Index i, j;
+
+  // Verify that iterators are default constructible (See bug #1900)
+  {
+    VERIFY( is_default_constructible_and_assignable(v.begin()));
+    VERIFY( is_default_constructible_and_assignable(v.end()));
+    VERIFY( is_default_constructible_and_assignable(cv.begin()));
+    VERIFY( is_default_constructible_and_assignable(cv.end()));
+
+    VERIFY( is_default_constructible_and_assignable(A.row(0).begin()));
+    VERIFY( is_default_constructible_and_assignable(A.row(0).end()));
+    VERIFY( is_default_constructible_and_assignable(cA.row(0).begin()));
+    VERIFY( is_default_constructible_and_assignable(cA.row(0).end()));
+
+    VERIFY( is_default_constructible_and_assignable(B.row(0).begin()));
+    VERIFY( is_default_constructible_and_assignable(B.row(0).end()));
+  }
 
   // Check we got a fast pointer-based iterator when expected
   {
@@ -271,6 +300,31 @@ void test_stl_iterators(int rows=Rows, int cols=Cols)
       }
     }
   }
+
+  {
+    // check basic for loop on vector-wise iterators
+    j=0;
+    for (auto it = A.colwise().cbegin(); it != A.colwise().cend(); ++it, ++j) {
+      VERIFY_IS_APPROX( it->coeff(0), A(0,j) );
+      VERIFY_IS_APPROX( (*it).coeff(0), A(0,j) );
+    }
+    j=0;
+    for (auto it = A.colwise().begin(); it != A.colwise().end(); ++it, ++j) {
+      (*it).coeffRef(0) = (*it).coeff(0); // compilation check
+      it->coeffRef(0) = it->coeff(0);     // compilation check
+      VERIFY_IS_APPROX( it->coeff(0), A(0,j) );
+      VERIFY_IS_APPROX( (*it).coeff(0), A(0,j) );
+    }
+
+    // check valuetype gives us a copy
+    j=0;
+    for (auto it = A.colwise().cbegin(); it != A.colwise().cend(); ++it, ++j) {
+      typename decltype(it)::value_type tmp = *it;
+      VERIFY_IS_NOT_EQUAL( tmp.data() , it->data() );
+      VERIFY_IS_APPROX( tmp, A.col(j) );
+    }
+  }
+
 #endif
 
   if(rows>=3) {
@@ -405,21 +459,37 @@ void test_stl_iterators(int rows=Rows, int cols=Cols)
   {
     RowVectorType row = RowVectorType::Random(cols);
     A.rowwise() = row;
-    VERIFY( std::all_of(A.rowwise().begin(), A.rowwise().end(), [&row](typename ColMatrixType::RowXpr x) { return internal::isApprox(x.norm(),row.norm()); }) );
+    VERIFY( std::all_of(A.rowwise().begin(),  A.rowwise().end(),  [&row](typename ColMatrixType::RowXpr x) { return internal::isApprox(x.squaredNorm(),row.squaredNorm()); }) );
+    VERIFY( std::all_of(A.rowwise().rbegin(), A.rowwise().rend(), [&row](typename ColMatrixType::RowXpr x) { return internal::isApprox(x.squaredNorm(),row.squaredNorm()); }) );
 
     VectorType col = VectorType::Random(rows);
     A.colwise() = col;
-    VERIFY( std::all_of(A.colwise().begin(), A.colwise().end(), [&col](typename ColMatrixType::ColXpr x) { return internal::isApprox(x.norm(),col.norm()); }) );
+    VERIFY( std::all_of(A.colwise().begin(),   A.colwise().end(),   [&col](typename ColMatrixType::ColXpr x) { return internal::isApprox(x.squaredNorm(),col.squaredNorm()); }) );
+    VERIFY( std::all_of(A.colwise().rbegin(),  A.colwise().rend(),  [&col](typename ColMatrixType::ColXpr x) { return internal::isApprox(x.squaredNorm(),col.squaredNorm()); }) );
+    VERIFY( std::all_of(A.colwise().cbegin(),  A.colwise().cend(),  [&col](typename ColMatrixType::ConstColXpr x) { return internal::isApprox(x.squaredNorm(),col.squaredNorm()); }) );
+    VERIFY( std::all_of(A.colwise().crbegin(), A.colwise().crend(), [&col](typename ColMatrixType::ConstColXpr x) { return internal::isApprox(x.squaredNorm(),col.squaredNorm()); }) );
 
     i = internal::random<Index>(0,A.rows()-1);
     A.setRandom();
     A.row(i).setZero();
-    VERIFY_IS_EQUAL( std::find_if(A.rowwise().begin(), A.rowwise().end(), [](typename ColMatrixType::RowXpr x) { return x.norm() == Scalar(0); })-A.rowwise().begin(), i );
+    VERIFY_IS_EQUAL( std::find_if(A.rowwise().begin(),  A.rowwise().end(),  [](typename ColMatrixType::RowXpr x) { return x.squaredNorm() == Scalar(0); })-A.rowwise().begin(),  i );
+    VERIFY_IS_EQUAL( std::find_if(A.rowwise().rbegin(), A.rowwise().rend(), [](typename ColMatrixType::RowXpr x) { return x.squaredNorm() == Scalar(0); })-A.rowwise().rbegin(), (A.rows()-1) - i );
 
     j = internal::random<Index>(0,A.cols()-1);
     A.setRandom();
     A.col(j).setZero();
-    VERIFY_IS_EQUAL( std::find_if(A.colwise().begin(), A.colwise().end(), [](typename ColMatrixType::ColXpr x) { return x.norm() == Scalar(0); })-A.colwise().begin(), j );
+    VERIFY_IS_EQUAL( std::find_if(A.colwise().begin(),  A.colwise().end(),  [](typename ColMatrixType::ColXpr x) { return x.squaredNorm() == Scalar(0); })-A.colwise().begin(),  j );
+    VERIFY_IS_EQUAL( std::find_if(A.colwise().rbegin(), A.colwise().rend(), [](typename ColMatrixType::ColXpr x) { return x.squaredNorm() == Scalar(0); })-A.colwise().rbegin(), (A.cols()-1) - j );
+  }
+
+  {
+    using VecOp = VectorwiseOp<ArrayXXi, 0>;
+    STATIC_CHECK(( internal::is_same<VecOp::const_iterator, decltype(std::declval<const VecOp&>().cbegin())>::value ));
+    STATIC_CHECK(( internal::is_same<VecOp::const_iterator, decltype(std::declval<const VecOp&>().cend  ())>::value ));
+    #if EIGEN_COMP_CXXVER>=14
+      STATIC_CHECK(( internal::is_same<VecOp::const_iterator, decltype(std::cbegin(std::declval<const VecOp&>()))>::value ));
+      STATIC_CHECK(( internal::is_same<VecOp::const_iterator, decltype(std::cend  (std::declval<const VecOp&>()))>::value ));
+    #endif
   }
 
 #endif

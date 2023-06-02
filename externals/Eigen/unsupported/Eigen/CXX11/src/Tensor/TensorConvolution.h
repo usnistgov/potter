@@ -316,6 +316,10 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
     RawAccess = false
   };
 
+  //===- Tensor block evaluation strategy (see TensorBlock.h) -------------===//
+  typedef internal::TensorBlockNotImplemented TensorBlock;
+  //===--------------------------------------------------------------------===//
+
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorEvaluator(const XprType& op, const Device& device)
       : m_inputImpl(op.inputExpression(), device), m_kernelImpl(op.kernelExpression(), device), m_kernelArg(op.kernelExpression()), m_kernel(NULL), m_local_kernel(false), m_device(device)
   {
@@ -574,7 +578,7 @@ struct GetKernelSize<Dynamic> {
 
 template <typename InputEvaluator, typename Index, typename InputDims,
           int StaticKernelSize>
-__global__ void EigenConvolutionKernel1D(
+__global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void EigenConvolutionKernel1D(
     InputEvaluator eval,
     const internal::IndexMapper<Index, InputDims, 1, InputEvaluator::Layout>
         indexMapper,
@@ -626,7 +630,7 @@ __global__ void EigenConvolutionKernel1D(
 
 template <typename InputEvaluator, typename Index, typename InputDims,
           int StaticKernelSizeX, int StaticKernelSizeY>
-__global__ void EigenConvolutionKernel2D(
+__global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void EigenConvolutionKernel2D(
     InputEvaluator eval,
     const internal::IndexMapper<Index, InputDims, 2, InputEvaluator::Layout>
         indexMapper,
@@ -697,7 +701,7 @@ __global__ void EigenConvolutionKernel2D(
 };
 
 template <typename InputEvaluator, typename Index, typename InputDims>
-__global__ void EigenConvolutionKernel3D(
+__global__ EIGEN_HIP_LAUNCH_BOUNDS_1024 void EigenConvolutionKernel3D(
     InputEvaluator eval,
     const internal::IndexMapper<Index, InputDims, 3, InputEvaluator::Layout>
         indexMapper,
@@ -788,6 +792,10 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
     CoordAccess = false,  // to be implemented
     RawAccess = false
   };
+
+  //===- Tensor block evaluation strategy (see TensorBlock.h) -------------===//
+  typedef internal::TensorBlockNotImplemented TensorBlock;
+  //===--------------------------------------------------------------------===//
 
   EIGEN_DEVICE_FUNC TensorEvaluator(const XprType& op, const GpuDevice& device)
       : m_inputImpl(op.inputExpression(), device), m_kernelImpl(op.kernelExpression(), device), m_kernelArg(op.kernelExpression()), m_indices(op.indices()), m_buf(NULL), m_kernel(NULL), m_local_kernel(false), m_device(device)

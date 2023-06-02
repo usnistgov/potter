@@ -54,14 +54,15 @@ template<typename Strides, typename XprType>
 class TensorStridingOp : public TensorBase<TensorStridingOp<Strides, XprType> >
 {
   public:
-  typedef typename Eigen::internal::traits<TensorStridingOp>::Scalar Scalar;
-  typedef typename Eigen::NumTraits<Scalar>::Real RealScalar;
-  typedef typename XprType::CoeffReturnType CoeffReturnType;
-  typedef typename Eigen::internal::nested<TensorStridingOp>::type Nested;
-  typedef typename Eigen::internal::traits<TensorStridingOp>::StorageKind StorageKind;
-  typedef typename Eigen::internal::traits<TensorStridingOp>::Index Index;
+    typedef TensorBase<TensorStridingOp<Strides, XprType> > Base;
+    typedef typename Eigen::internal::traits<TensorStridingOp>::Scalar Scalar;
+    typedef typename Eigen::NumTraits<Scalar>::Real RealScalar;
+    typedef typename XprType::CoeffReturnType CoeffReturnType;
+    typedef typename Eigen::internal::nested<TensorStridingOp>::type Nested;
+    typedef typename Eigen::internal::traits<TensorStridingOp>::StorageKind StorageKind;
+    typedef typename Eigen::internal::traits<TensorStridingOp>::Index Index;
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorStridingOp(const XprType& expr, const Strides& dims)
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorStridingOp(const XprType& expr, const Strides& dims)
       : m_xpr(expr), m_dims(dims) {}
 
     EIGEN_DEVICE_FUNC
@@ -71,24 +72,7 @@ class TensorStridingOp : public TensorBase<TensorStridingOp<Strides, XprType> >
     const typename internal::remove_all<typename XprType::Nested>::type&
     expression() const { return m_xpr; }
 
-    EIGEN_DEVICE_FUNC
-    EIGEN_STRONG_INLINE TensorStridingOp& operator = (const TensorStridingOp& other)
-    {
-      typedef TensorAssignOp<TensorStridingOp, const TensorStridingOp> Assign;
-      Assign assign(*this, other);
-      internal::TensorExecutor<const Assign, DefaultDevice>::run(assign, DefaultDevice());
-      return *this;
-    }
-
-    template<typename OtherDerived>
-    EIGEN_DEVICE_FUNC
-    EIGEN_STRONG_INLINE TensorStridingOp& operator = (const OtherDerived& other)
-    {
-      typedef TensorAssignOp<TensorStridingOp, const OtherDerived> Assign;
-      Assign assign(*this, other);
-      internal::TensorExecutor<const Assign, DefaultDevice>::run(assign, DefaultDevice());
-      return *this;
-    }
+    EIGEN_TENSOR_INHERIT_ASSIGNMENT_OPERATORS(TensorStridingOp)
 
   protected:
     typename XprType::Nested m_xpr;
@@ -115,11 +99,15 @@ struct TensorEvaluator<const TensorStridingOp<Strides, ArgType>, Device>
     IsAligned = /*TensorEvaluator<ArgType, Device>::IsAligned*/false,
     PacketAccess = TensorEvaluator<ArgType, Device>::PacketAccess,
     BlockAccess = false,
-    PreferBlockAccess = false,
+    PreferBlockAccess = TensorEvaluator<ArgType, Device>::PreferBlockAccess,
     Layout = TensorEvaluator<ArgType, Device>::Layout,
     CoordAccess = false,  // to be implemented
     RawAccess = false
   };
+
+  //===- Tensor block evaluation strategy (see TensorBlock.h) -------------===//
+  typedef internal::TensorBlockNotImplemented TensorBlock;
+  //===--------------------------------------------------------------------===//
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorEvaluator(const XprType& op, const Device& device)
       : m_impl(op.expression(), device)
@@ -283,7 +271,6 @@ struct TensorEvaluator<TensorStridingOp<Strides, ArgType>, Device>
   enum {
     IsAligned = /*TensorEvaluator<ArgType, Device>::IsAligned*/false,
     PacketAccess = TensorEvaluator<ArgType, Device>::PacketAccess,
-    BlockAccess = false,
     PreferBlockAccess = false,
     Layout = TensorEvaluator<ArgType, Device>::Layout,
     CoordAccess = false,  // to be implemented

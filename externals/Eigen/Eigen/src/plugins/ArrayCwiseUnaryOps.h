@@ -14,6 +14,7 @@ typedef CwiseUnaryOp<internal::scalar_expm1_op<Scalar>, const Derived> Expm1Retu
 typedef CwiseUnaryOp<internal::scalar_log_op<Scalar>, const Derived> LogReturnType;
 typedef CwiseUnaryOp<internal::scalar_log1p_op<Scalar>, const Derived> Log1pReturnType;
 typedef CwiseUnaryOp<internal::scalar_log10_op<Scalar>, const Derived> Log10ReturnType;
+typedef CwiseUnaryOp<internal::scalar_log2_op<Scalar>, const Derived> Log2ReturnType;
 typedef CwiseUnaryOp<internal::scalar_cos_op<Scalar>, const Derived> CosReturnType;
 typedef CwiseUnaryOp<internal::scalar_sin_op<Scalar>, const Derived> SinReturnType;
 typedef CwiseUnaryOp<internal::scalar_tan_op<Scalar>, const Derived> TanReturnType;
@@ -32,6 +33,7 @@ typedef CwiseUnaryOp<internal::scalar_cosh_op<Scalar>, const Derived> CoshReturn
 typedef CwiseUnaryOp<internal::scalar_square_op<Scalar>, const Derived> SquareReturnType;
 typedef CwiseUnaryOp<internal::scalar_cube_op<Scalar>, const Derived> CubeReturnType;
 typedef CwiseUnaryOp<internal::scalar_round_op<Scalar>, const Derived> RoundReturnType;
+typedef CwiseUnaryOp<internal::scalar_rint_op<Scalar>, const Derived> RintReturnType;
 typedef CwiseUnaryOp<internal::scalar_floor_op<Scalar>, const Derived> FloorReturnType;
 typedef CwiseUnaryOp<internal::scalar_ceil_op<Scalar>, const Derived> CeilReturnType;
 typedef CwiseUnaryOp<internal::scalar_isnan_op<Scalar>, const Derived> IsNaNReturnType;
@@ -156,6 +158,18 @@ inline const Log10ReturnType
 log10() const
 {
   return Log10ReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise base-2 logarithm of *this.
+  *
+  * This function computes the coefficient-wise base-2 logarithm.
+  *
+  */
+EIGEN_DEVICE_FUNC
+inline const Log2ReturnType
+log2() const
+{
+  return Log2ReturnType(derived());
 }
 
 /** \returns an expression of the coefficient-wise square root of *this.
@@ -425,6 +439,20 @@ inline const CubeReturnType
 cube() const
 {
   return CubeReturnType(derived());
+}
+
+/** \returns an expression of the coefficient-wise rint of *this.
+  *
+  * Example: \include Cwise_rint.cpp
+  * Output: \verbinclude Cwise_rint.out
+  *
+  * \sa <a href="group__CoeffwiseMathFunctions.html#cwisetable_rint">Math functions</a>, ceil(), floor()
+  */
+EIGEN_DEVICE_FUNC
+inline const RintReturnType
+rint() const
+{
+  return RintReturnType(derived());
 }
 
 /** \returns an expression of the coefficient-wise round of *this.

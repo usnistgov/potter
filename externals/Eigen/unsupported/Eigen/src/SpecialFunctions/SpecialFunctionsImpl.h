@@ -57,11 +57,23 @@ struct lgamma_retval {
 };
 
 #if EIGEN_HAS_C99_MATH
+// Since glibc 2.19
+#if defined(__GLIBC__) && ((__GLIBC__>=2 && __GLIBC_MINOR__ >= 19) || __GLIBC__>2) \
+ && (defined(_DEFAULT_SOURCE) || defined(_BSD_SOURCE) || defined(_SVID_SOURCE))
+#define EIGEN_HAS_LGAMMA_R
+#endif
+
+// Glibc versions before 2.19
+#if defined(__GLIBC__) && ((__GLIBC__==2 && __GLIBC_MINOR__ < 19) || __GLIBC__<2) \
+ && (defined(_BSD_SOURCE) || defined(_SVID_SOURCE))
+#define EIGEN_HAS_LGAMMA_R
+#endif
+
 template <>
 struct lgamma_impl<float> {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE float run(float x) {
-#if !defined(EIGEN_GPU_COMPILE_PHASE) && (defined(_BSD_SOURCE) || defined(_SVID_SOURCE)) && !defined(__APPLE__)
+#if !defined(EIGEN_GPU_COMPILE_PHASE) && defined (EIGEN_HAS_LGAMMA_R) && !defined(__APPLE__)
     int dummy;
     return ::lgammaf_r(x, &dummy);
 #elif defined(SYCL_DEVICE_ONLY)
@@ -76,7 +88,7 @@ template <>
 struct lgamma_impl<double> {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE double run(double x) {
-#if !defined(EIGEN_GPU_COMPILE_PHASE) && (defined(_BSD_SOURCE) || defined(_SVID_SOURCE)) && !defined(__APPLE__)
+#if !defined(EIGEN_GPU_COMPILE_PHASE) && defined(EIGEN_HAS_LGAMMA_R) && !defined(__APPLE__)
     int dummy;
     return ::lgamma_r(x, &dummy);
 #elif defined(SYCL_DEVICE_ONLY)
@@ -86,6 +98,8 @@ struct lgamma_impl<double> {
 #endif
   }
 };
+
+#undef EIGEN_HAS_LGAMMA_R
 #endif
 
 /****************************************************************************
@@ -227,7 +241,7 @@ struct digamma_impl {
     Scalar p, q, nz, s, w, y;
     bool negative = false;
 
-    const Scalar maxnum = NumTraits<Scalar>::infinity();
+    const Scalar nan = NumTraits<Scalar>::quiet_NaN();
     const Scalar m_pi = Scalar(EIGEN_PI);
 
     const Scalar zero = Scalar(0);
@@ -240,7 +254,7 @@ struct digamma_impl {
       q = x;
       p = numext::floor(q);
       if (p == q) {
-        return maxnum;
+        return nan;
       }
       /* Remove the zeros of tan(m_pi x)
        * by subtracting the nearest integer from x
@@ -279,13 +293,63 @@ struct digamma_impl {
  * Implementation of erf, requires C++11/C99                                *
  ****************************************************************************/
 
-template <typename Scalar>
+/** \internal \returns the error function of \a a (coeff-wise)
+    Doesn't do anything fancy, just a 13/8-degree rational interpolant which
+    is accurate up to a couple of ulp in the range [-4, 4], outside of which
+    fl(erf(x)) = +/-1.
+
+    This implementation works on both scalars and Ts.
+*/
+template <typename T>
+EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE T generic_fast_erf_float(const T& a_x) {
+  // Clamp the inputs to the range [-4, 4] since anything outside
+  // this range is +/-1.0f in single-precision.
+  const T plus_4 = pset1<T>(4.f);
+  const T minus_4 = pset1<T>(-4.f);
+  const T x = pmax(pmin(a_x, plus_4), minus_4);
+  // The monomial coefficients of the numerator polynomial (odd).
+  const T alpha_1 = pset1<T>(-1.60960333262415e-02f);
+  const T alpha_3 = pset1<T>(-2.95459980854025e-03f);
+  const T alpha_5 = pset1<T>(-7.34990630326855e-04f);
+  const T alpha_7 = pset1<T>(-5.69250639462346e-05f);
+  const T alpha_9 = pset1<T>(-2.10102402082508e-06f);
+  const T alpha_11 = pset1<T>(2.77068142495902e-08f);
+  const T alpha_13 = pset1<T>(-2.72614225801306e-10f);
+
+  // The monomial coefficients of the denominator polynomial (even).
+  const T beta_0 = pset1<T>(-1.42647390514189e-02f);
+  const T beta_2 = pset1<T>(-7.37332916720468e-03f);
+  const T beta_4 = pset1<T>(-1.68282697438203e-03f);
+  const T beta_6 = pset1<T>(-2.13374055278905e-04f);
+  const T beta_8 = pset1<T>(-1.45660718464996e-05f);
+
+  // Since the polynomials are odd/even, we need x^2.
+  const T x2 = pmul(x, x);
+
+  // Evaluate the numerator polynomial p.
+  T p = pmadd(x2, alpha_13, alpha_11);
+  p = pmadd(x2, p, alpha_9);
+  p = pmadd(x2, p, alpha_7);
+  p = pmadd(x2, p, alpha_5);
+  p = pmadd(x2, p, alpha_3);
+  p = pmadd(x2, p, alpha_1);
+  p = pmul(x, p);
+
+  // Evaluate the denominator polynomial p.
+  T q = pmadd(x2, beta_8, beta_6);
+  q = pmadd(x2, q, beta_4);
+  q = pmadd(x2, q, beta_2);
+  q = pmadd(x2, q, beta_0);
+
+  // Divide the numerator by the denominator.
+  return pdiv(p, q);
+}
+
+template <typename T>
 struct erf_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar) {
-    EIGEN_STATIC_ASSERT((internal::is_same<Scalar, Scalar>::value == false),
-                        THIS_TYPE_IS_NOT_SUPPORTED);
-    return Scalar(0);
+  static EIGEN_STRONG_INLINE T run(const T& x) {
+    return generic_fast_erf_float(x);
   }
 };
 
@@ -302,7 +366,7 @@ struct erf_impl<float> {
 #if defined(SYCL_DEVICE_ONLY)
     return cl::sycl::erf(x);
 #else
-    return ::erff(x);
+    return generic_fast_erf_float(x);
 #endif
   }
 };
@@ -426,7 +490,8 @@ struct erfc_impl<double> {
 template<typename T>
 EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE T flipsign(
     const T& should_flipsign, const T& x) {
-  const T sign_mask = pset1<T>(-0.0);
+  typedef typename unpacket_traits<T>::type Scalar;
+  const T sign_mask = pset1<T>(Scalar(-0.0));
   T sign_bit = pand<T>(should_flipsign, sign_mask);
   return pxor<T>(sign_bit, x);
 }
@@ -540,7 +605,7 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE T generic_ndtri_lt_exp_neg_two(
 
   x = psqrt(pmul(neg_two, plog(b)));
   x0 = psub(x, pdiv(plog(x), x));
-  z = one / x;
+  z = pdiv(one, x);
   x1 = pmul(
       z, pselect(
           pcmp_lt(x, eight),
@@ -663,6 +728,19 @@ struct cephes_helper<double> {
 
 enum IgammaComputationMode { VALUE, DERIVATIVE, SAMPLE_DERIVATIVE };
 
+template <typename Scalar>
+EIGEN_DEVICE_FUNC
+static EIGEN_STRONG_INLINE Scalar main_igamma_term(Scalar a, Scalar x) {
+    /* Compute  x**a * exp(-x) / gamma(a)  */
+    Scalar logax = a * numext::log(x) - x - lgamma_impl<Scalar>::run(a);
+    if (logax < -numext::log(NumTraits<Scalar>::highest()) ||
+        // Assuming x and a aren't Nan.
+        (numext::isnan)(logax)) {
+      return Scalar(0);
+    }
+    return numext::exp(logax);
+}
+
 template <typename Scalar, IgammaComputationMode mode>
 EIGEN_DEVICE_FUNC
 int igamma_num_iterations() {
@@ -702,6 +780,15 @@ struct igammac_cf_impl {
     const Scalar biginv = cephes_helper<Scalar>::biginv();
 
     if ((numext::isinf)(x)) {
+      return zero;
+    }
+
+    Scalar ax = main_igamma_term<Scalar>(a, x);
+    // This is independent of mode. If this value is zero,
+    // then the function value is zero. If the function value is zero,
+    // then we are in a neighborhood where the function value evalutes to zero,
+    // so the derivative is zero.
+    if (ax == zero) {
       return zero;
     }
 
@@ -775,9 +862,7 @@ struct igammac_cf_impl {
     }
 
     /* Compute  x**a * exp(-x) / gamma(a)  */
-    Scalar logax = a * numext::log(x) - x - lgamma_impl<Scalar>::run(a);
     Scalar dlogax_da = numext::log(x) - digamma_impl<Scalar>::run(a);
-    Scalar ax = numext::exp(logax);
     Scalar dax_da = ax * dlogax_da;
 
     switch (mode) {
@@ -808,6 +893,18 @@ struct igamma_series_impl {
     const Scalar one = 1;
     const Scalar machep = cephes_helper<Scalar>::machep();
 
+    Scalar ax = main_igamma_term<Scalar>(a, x);
+
+    // This is independent of mode. If this value is zero,
+    // then the function value is zero. If the function value is zero,
+    // then we are in a neighborhood where the function value evalutes to zero,
+    // so the derivative is zero.
+    if (ax == zero) {
+      return zero;
+    }
+
+    ax /= a;
+
     /* power series */
     Scalar r = a;
     Scalar c = one;
@@ -836,10 +933,7 @@ struct igamma_series_impl {
       }
     }
 
-    /* Compute  x**a * exp(-x) / gamma(a + 1)  */
-    Scalar logax = a * numext::log(x) - x - lgamma_impl<Scalar>::run(a + one);
     Scalar dlogax_da = numext::log(x) - digamma_impl<Scalar>::run(a + one);
-    Scalar ax = numext::exp(logax);
     Scalar dax_da = ax * dlogax_da;
 
     switch (mode) {
@@ -1309,7 +1403,12 @@ struct zeta_impl {
         {
             if(q == numext::floor(q))
             {
-                return maxnum;
+                if (x == numext::floor(x) && long(x) % 2 == 0) {
+                    return maxnum;
+                }
+                else {
+                    return nan;
+                }
             }
             p = x;
             r = numext::floor(p);
@@ -1385,11 +1484,11 @@ struct polygamma_impl {
         Scalar nplus = n + one;
         const Scalar nan = NumTraits<Scalar>::quiet_NaN();
 
-        // Check that n is an integer
-        if (numext::floor(n) != n) {
+        // Check that n is a non-negative integer
+        if (numext::floor(n) != n || n < zero) {
             return nan;
         }
-        // Just return the digamma function for n = 1
+        // Just return the digamma function for n = 0
         else if (n == zero) {
             return digamma_impl<Scalar>::run(x);
         }

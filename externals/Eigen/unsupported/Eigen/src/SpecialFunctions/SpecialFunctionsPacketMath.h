@@ -77,4 +77,3 @@ Packet pbetainc(const Packet& a, const Packet& b,const Packet& x) { using numext
 } // end namespace Eigen
 
 #endif // EIGEN_SPECIALFUNCTIONS_PACKETMATH_H
-

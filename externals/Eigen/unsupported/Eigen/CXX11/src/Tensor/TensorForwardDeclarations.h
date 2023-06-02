@@ -123,7 +123,7 @@ struct StorageMemory<T, const SyclDevice> : StorageMemory<T, SyclDevice> {};
 
 namespace TensorSycl {
 namespace internal{
-template <typename Evaluator, typename Op> class ReductionFunctor;
+template <typename Evaluator, typename Op> class GenericNondeterministicReducer;
 }
 }
 #endif
@@ -154,24 +154,35 @@ struct IsVectorizable<GpuDevice, Expression> {
                             TensorEvaluator<Expression, GpuDevice>::IsAligned;
 };
 
+// Tiled evaluation strategy.
+enum TiledEvaluation {
+  Off = 0,    // tiled evaluation is not supported
+  On = 1,     // still work in progress (see TensorBlock.h)
+};
+
 template <typename Device, typename Expression>
 struct IsTileable {
   // Check that block evaluation is supported and it's a preferred option (at
   // least one sub-expression has much faster block evaluation, e.g.
   // broadcasting).
-  static const bool value = TensorEvaluator<Expression, Device>::BlockAccess &&
-                            TensorEvaluator<Expression, Device>::PreferBlockAccess;
+  static const bool BlockAccess =
+      TensorEvaluator<Expression, Device>::BlockAccess &&
+      TensorEvaluator<Expression, Device>::PreferBlockAccess;
+
+  static const TiledEvaluation value =
+      BlockAccess ? TiledEvaluation::On : TiledEvaluation::Off;
 };
 
 template <typename Expression, typename Device,
-          bool Vectorizable = IsVectorizable<Device, Expression>::value,
-          bool Tileable = IsTileable<Device, Expression>::value>
+          bool Vectorizable      = IsVectorizable<Device, Expression>::value,
+          TiledEvaluation Tiling = IsTileable<Device, Expression>::value>
 class TensorExecutor;
 
 template <typename Expression, typename Device, typename DoneCallback,
           bool Vectorizable = IsVectorizable<Device, Expression>::value,
-          bool Tileable = IsTileable<Device, Expression>::value>
+          TiledEvaluation Tiling = IsTileable<Device, Expression>::value>
 class TensorAsyncExecutor;
+
 
 }  // end namespace internal
 

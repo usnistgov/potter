@@ -148,6 +148,10 @@ template<typename PlainObjectType> class TensorRef : public TensorBase<TensorRef
       RawAccess = false
     };
 
+    //===- Tensor block evaluation strategy (see TensorBlock.h) -----------===//
+    typedef internal::TensorBlockNotImplemented TensorBlock;
+    //===------------------------------------------------------------------===//
+
     EIGEN_STRONG_INLINE TensorRef() : m_evaluator(NULL) {
     }
 
@@ -380,6 +384,10 @@ struct TensorEvaluator<const TensorRef<Derived>, Device>
     RawAccess = false
   };
 
+  //===- Tensor block evaluation strategy (see TensorBlock.h) -------------===//
+  typedef internal::TensorBlockNotImplemented TensorBlock;
+  //===--------------------------------------------------------------------===//
+
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorEvaluator(const TensorRef<Derived>& m, const Device&)
       : m_ref(m)
   { }
@@ -400,8 +408,8 @@ struct TensorEvaluator<const TensorRef<Derived>, Device>
     return m_ref.coeffRef(index);
   }
 
-  EIGEN_DEVICE_FUNC Scalar* data() const { return m_ref.data(); }
-  
+  EIGEN_DEVICE_FUNC const Scalar* data() const { return m_ref.data(); }
+
  protected:
   TensorRef<Derived> m_ref;
 };
@@ -426,6 +434,10 @@ struct TensorEvaluator<TensorRef<Derived>, Device> : public TensorEvaluator<cons
     PreferBlockAccess = false,
     RawAccess = false
   };
+
+  //===- Tensor block evaluation strategy (see TensorBlock.h) -------------===//
+  typedef internal::TensorBlockNotImplemented TensorBlock;
+  //===--------------------------------------------------------------------===//
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE TensorEvaluator(TensorRef<Derived>& m, const Device& d) : Base(m, d)
   { }

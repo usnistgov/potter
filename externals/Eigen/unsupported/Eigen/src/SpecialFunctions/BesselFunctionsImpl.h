@@ -46,7 +46,7 @@ struct bessel_i0e_retval {
   typedef Scalar type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_i0e {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -201,11 +201,11 @@ struct generic_i0e<T, double> {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_i0e_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_i0e<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_i0e<T>::run(x);
   }
 };
 
@@ -214,7 +214,7 @@ struct bessel_i0_retval {
   typedef Scalar type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_i0 {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T& x) {
@@ -224,11 +224,11 @@ struct generic_i0 {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_i0_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_i0<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_i0<T>::run(x);
   }
 };
 
@@ -237,7 +237,7 @@ struct bessel_i1e_retval {
   typedef Scalar type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type >
 struct generic_i1e {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -311,7 +311,7 @@ struct generic_i1e<T, float> {
     // [-8, 8] and evaluate a branch based off of that. It's possible
     // in practice most elements are in this region.
     y = pselect(pcmp_le(y, pset1<T>(8.0f)), y_le_eight, y_gt_eight);
-    return pselect(pcmp_lt(x, pset1<T>(0.0f)), -y, y);
+    return pselect(pcmp_lt(x, pset1<T>(0.0f)), pnegate(y), y);
   }
 };
 
@@ -392,24 +392,24 @@ struct generic_i1e<T, double> {
     // [-8, 8] and evaluate a branch based off of that. It's possible
     // in practice most elements are in this region.
     y = pselect(pcmp_le(y, pset1<T>(8.0)), y_le_eight, y_gt_eight);
-    return pselect(pcmp_lt(x, pset1<T>(0.0f)), -y, y);
+    return pselect(pcmp_lt(x, pset1<T>(0.0)), pnegate(y), y);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_i1e_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_i1e<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_i1e<T>::run(x);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_i1_retval {
-  typedef Scalar type;
+  typedef T type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_i1 {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T& x) {
@@ -419,20 +419,20 @@ struct generic_i1 {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_i1_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_i1<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_i1<T>::run(x);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_k0e_retval {
-  typedef Scalar type;
+  typedef T type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_k0e {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -491,8 +491,8 @@ struct generic_k0e<T, float> {
     T x_le_two = internal::pchebevl<T, 7>::run(
         pmadd(x, x, pset1<T>(-2.0)), A);
     x_le_two = pmadd(
-        generic_i0<T, float>::run(x), pmul(
-            pset1<T>(-1.0), plog(pmul(pset1<T>(0.5), x))), x_le_two);
+        generic_i0<T, float>::run(x), pnegate(
+            plog(pmul(pset1<T>(0.5), x))), x_le_two);
     x_le_two = pmul(pexp(x), x_le_two);
     T x_gt_two = pmul(
             internal::pchebevl<T, 10>::run(
@@ -582,20 +582,20 @@ struct generic_k0e<T, double> {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_k0e_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_k0e<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_k0e<T>::run(x);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_k0_retval {
-  typedef Scalar type;
+  typedef T type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_k0 {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -663,12 +663,12 @@ struct generic_k0<T, float> {
     T x_le_two = internal::pchebevl<T, 7>::run(
         pmadd(x, x, pset1<T>(-2.0)), A);
     x_le_two = pmadd(
-        generic_i0<T, float>::run(x), pmul(
-            pset1<T>(-1.0), plog(pmul(pset1<T>(0.5), x))), x_le_two);
+        generic_i0<T, float>::run(x), pnegate(
+            plog(pmul(pset1<T>(0.5), x))), x_le_two);
     x_le_two = pselect(pcmp_le(x, pset1<T>(0.0)), MAXNUM, x_le_two);
     T x_gt_two = pmul(
         pmul(
-            pexp(-x),
+            pexp(pnegate(x)),
             internal::pchebevl<T, 10>::run(
                 psub(pdiv(pset1<T>(8.0), x), two), B)),
         prsqrt(x));
@@ -741,8 +741,8 @@ struct generic_k0<T, double> {
     T x_le_two = internal::pchebevl<T, 10>::run(
         pmadd(x, x, pset1<T>(-2.0)), A);
     x_le_two = pmadd(
-        generic_i0<T, double>::run(x), pmul(
-            pset1<T>(-1.0), plog(pmul(pset1<T>(0.5), x))), x_le_two);
+        generic_i0<T, double>::run(x), pnegate(
+            plog(pmul(pset1<T>(0.5), x))), x_le_two);
     x_le_two = pselect(pcmp_le(x, pset1<T>(0.0)), MAXNUM, x_le_two);
     T x_gt_two = pmul(
         pmul(
@@ -754,20 +754,20 @@ struct generic_k0<T, double> {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_k0_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_k0<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_k0<T>::run(x);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_k1e_retval {
-  typedef Scalar type;
+  typedef T type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_k1e {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -910,20 +910,20 @@ struct generic_k1e<T, double> {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_k1e_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_k1e<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_k1e<T>::run(x);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_k1_retval {
-  typedef Scalar type;
+  typedef T type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_k1 {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -991,7 +991,7 @@ struct generic_k1<T, float> {
         generic_i1<T, float>::run(x), plog(pmul(pset1<T>(0.5), x)), x_le_two);
     x_le_two = pselect(pcmp_le(x, pset1<T>(0.0)), MAXNUM, x_le_two);
     T x_gt_two = pmul(
-        pexp(-x),
+        pexp(pnegate(x)),
         pmul(
             internal::pchebevl<T, 10>::run(
                 psub(pdiv(pset1<T>(8.0), x), two), B),
@@ -1076,20 +1076,20 @@ struct generic_k1<T, double> {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_k1_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_k1<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_k1<T>::run(x);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_j0_retval {
-  typedef Scalar type;
+  typedef T type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_j0 {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -1276,20 +1276,20 @@ struct generic_j0<T, double> {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_j0_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_j0<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_j0<T>::run(x);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_y0_retval {
-  typedef Scalar type;
+  typedef T type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_y0 {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -1474,20 +1474,20 @@ struct generic_y0<T, double> {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_y0_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_y0<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_y0<T>::run(x);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_j1_retval {
-  typedef Scalar type;
+  typedef T type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_j1 {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -1572,7 +1572,7 @@ struct generic_j1<T, float> {
     // j1 is an odd function. This implementation differs from cephes to
     // take this fact in to account. Cephes returns -j1(x) for y > 2 range.
     y_gt_two = pselect(
-        pcmp_lt(x, pset1<T>(0.0f)), pmul(pset1<T>(-1.0f), y_gt_two), y_gt_two);
+        pcmp_lt(x, pset1<T>(0.0f)), pnegate(y_gt_two), y_gt_two);
     return pselect(pcmp_le(y, pset1<T>(2.0f)), y_le_two, y_gt_two);
   }
 };
@@ -1660,25 +1660,25 @@ struct generic_j1<T, double> {
     // j1 is an odd function. This implementation differs from cephes to
     // take this fact in to account. Cephes returns -j1(x) for y > 5 range.
     y_gt_five = pselect(
-        pcmp_lt(x, pset1<T>(0.0f)), pmul(pset1<T>(-1.0), y_gt_five), y_gt_five);
+        pcmp_lt(x, pset1<T>(0.0)), pnegate(y_gt_five), y_gt_five);
     return pselect(pcmp_le(y, pset1<T>(5.0)), y_le_five, y_gt_five);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_j1_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_j1<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_j1<T>::run(x);
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_y1_retval {
-  typedef Scalar type;
+  typedef T type;
 };
 
-template <typename T, typename ScalarType>
+template <typename T, typename ScalarType = typename unpacket_traits<T>::type>
 struct generic_y1 {
   EIGEN_DEVICE_FUNC
   static EIGEN_STRONG_INLINE T run(const T&) {
@@ -1868,11 +1868,11 @@ struct generic_y1<T, double> {
   }
 };
 
-template <typename Scalar>
+template <typename T>
 struct bessel_y1_impl {
   EIGEN_DEVICE_FUNC
-  static EIGEN_STRONG_INLINE Scalar run(const Scalar x) {
-    return generic_y1<Scalar, Scalar>::run(x);
+  static EIGEN_STRONG_INLINE T run(const T x) {
+    return generic_y1<T>::run(x);
   }
 };
 

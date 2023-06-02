@@ -64,7 +64,7 @@ void test_gpu_conversion() {
   Eigen::GpuStreamDevice stream;
   Eigen::GpuDevice gpu_device(&stream);
   int num_elem = 101;
-  
+
   float* d_float = (float*)gpu_device.allocate(num_elem * sizeof(float));
   Eigen::half* d_half = (Eigen::half*)gpu_device.allocate(num_elem * sizeof(Eigen::half));
   float* d_conv = (float*)gpu_device.allocate(num_elem * sizeof(float));
@@ -322,7 +322,7 @@ template<typename>
 void test_gpu_reductions(int size1, int size2, int redux) {
 
    std::cout << "Reducing " << size1 << " by " << size2
-             << " tensor along dim " << redux << std::endl; 
+             << " tensor along dim " << redux << std::endl;
 
   Eigen::GpuStreamDevice stream;
   Eigen::GpuDevice gpu_device(&stream);
@@ -346,7 +346,7 @@ void test_gpu_reductions(int size1, int size2, int redux) {
   gpu_float1.device(gpu_device) = gpu_float1.random() * 2.0f;
   gpu_float2.device(gpu_device) = gpu_float2.random() * 2.0f;
 
-  Eigen::array<int, 1> redux_dim = {{redux}};
+  Eigen::array<int, 1> redux_dim = {redux};
   gpu_res_float.device(gpu_device) = gpu_float1.sum(redux_dim).cast<Eigen::half>();
   gpu_res_half.device(gpu_device) = gpu_float1.cast<Eigen::half>().sum(redux_dim);
 
@@ -444,7 +444,7 @@ void test_gpu_forced_evals() {
       d_float, num_elem);
   Eigen::TensorMap<Eigen::Tensor<float, 1>, Eigen::Aligned> gpu_res_half1(
       d_res_half1, num_elem);
- Eigen::TensorMap<Eigen::Tensor<float, 1>, Eigen::Unaligned> gpu_res_half2(
+  Eigen::TensorMap<Eigen::Tensor<float, 1>, Eigen::Unaligned> gpu_res_half2(
       d_res_half2, num_elem);
   Eigen::TensorMap<Eigen::Tensor<float, 1>, Eigen::Aligned> gpu_res_float(
       d_res_float, num_elem);
@@ -461,7 +461,7 @@ void test_gpu_forced_evals() {
   Tensor<float, 1> half_prec2(num_elem);
   Tensor<float, 1> full_prec(num_elem);
   gpu_device.memcpyDeviceToHost(half_prec1.data(), d_res_half1, num_elem*sizeof(float));
-  gpu_device.memcpyDeviceToHost(half_prec2.data(), d_res_half1, num_elem*sizeof(float));
+  gpu_device.memcpyDeviceToHost(half_prec2.data(), d_res_half2, num_elem*sizeof(float));
   gpu_device.memcpyDeviceToHost(full_prec.data(), d_res_float, num_elem*sizeof(float));
   gpu_device.synchronize();
 

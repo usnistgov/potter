@@ -750,7 +750,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
       template <typename EvalCtx>
       struct ThreadLocalBlocksAllocator</*pack_rhs=*/false, EvalCtx> {
         static void allocate(EvalCtx& ctx, Blocks& blocks) {
-          std::vector<RhsBlock> lhs_blocks;
+          std::vector<LhsBlock> lhs_blocks;
           BlockMemHandle mem_handle = ctx.kernel_.allocateSlices(
               ctx.device_,
               /*num_lhs=*/ctx.gm_,
@@ -758,7 +758,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
               /*num_slices=*/1,
               /*lhs_blocks=*/&lhs_blocks, /*rhs_blocks=*/nullptr);
 
-          blocks = ThreadLocalBlocks<RhsBlock>(std::move(mem_handle),
+          blocks = ThreadLocalBlocks<LhsBlock>(std::move(mem_handle),
                                                std::move(lhs_blocks));
         }
 
@@ -823,7 +823,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
         ThreadLocalBlocks<LhsBlock>& blocks = lhs_thread_local_blocks_.local();
 
         Index grain_index = m1 - m * gm_;
-        return blocks.block(grain_index);
+        return blocks.block(internal::convert_index<int>(grain_index)); // FIXME better make ThreadLocalBlocks use Eigen::Index?
       } else {
         return packed_lhs_[k % (P - 1)][m1];
       }
@@ -835,7 +835,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
         ThreadLocalBlocks<RhsBlock>& blocks = rhs_thread_local_blocks_.local();
 
         Index grain_index = n1 - n * gn_;
-        return blocks.block(grain_index);
+        return blocks.block(internal::convert_index<int>(grain_index)); // FIXME better make ThreadLocalBlocks use Eigen::Index?
       } else {
         return packed_rhs_[k % (P - 1)][n1];
       }
@@ -904,14 +904,16 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
 
       const Index nend = n * gn_ + gn(n);
       for (Index n1 = n * gn_; n1 < nend; n1++) {
-        if (k == 0) {
-          // Zero the output memory in parallel.
-          // On 10000x2x10000 mm zeroing can easily take half of time.
-          // Zero (bn x m) row. Safe to do here because all kernels that will
-          // write to this memory depend on completion of this task.
-          // Note: don't call device_.memset() here. device_.memset() blocks on
-          // thread pool worker thread, which can lead to underutilization and
-          // deadlocks.
+        if (!TensorContractionKernel::HasBeta && k == 0) {
+          // Zero the output memory in parallel, only if contraction kernel does
+          // not support `beta`. Otherwise we will pass beta 0.0 to the first
+          // call to the `TensorContractionKernel::invoke()`.
+          //
+          // On 10000x2x10000 mm zeroing can easily take half of time. Zero (bn
+          // x m) row. Safe to do here because all kernels that will write to
+          // this memory depend on completion of this task. Note: don't call
+          // device_.memset() here. device_.memset() blocks on thread pool
+          // worker thread, which can lead to underutilization and deadlocks.
           memset(buffer_ + n1 * bn_ * m_, 0, bn(n1) * m_ * sizeof(Scalar));
         }
         kernel_.packRhs(&packed_rhs(n, k, n1, use_thread_local),
@@ -936,6 +938,12 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
       // (rhs fits into L2$ while lhs only into L3$).
       const Index nend = n * gn_ + gn(n);
       const Index mend = m * gm_ + gm(m);
+
+      // NOTE: output = alpha * LHS * RHS + beta * output.
+      const Scalar alpha = Scalar(1);
+      const Scalar beta =
+          (TensorContractionKernel::HasBeta && k == 0) ? Scalar(0) : Scalar(1);
+
       if (shard_by_col_) {
         for (Index n1 = n * gn_; n1 < nend; n1++) {
           for (Index m1 = m * gm_; m1 < mend; m1++) {
@@ -944,7 +952,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
                 output_mapper,
                 packed_lhs(m, k, m1, !shard_by_col_ && use_thread_local),
                 packed_rhs(n, k, n1, shard_by_col_ && use_thread_local), bm(m1),
-                bk(k), bn(n1), Scalar(1));
+                bk(k), bn(n1), alpha, beta);
 
             // We are done with the last task for the [m1, n1] block.
             if (k + 1 == nk_) {
@@ -961,7 +969,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
                 output_mapper,
                 packed_lhs(m, k, m1, !shard_by_col_ && use_thread_local),
                 packed_rhs(n, k, n1, shard_by_col_ && use_thread_local), bm(m1),
-                bk(k), bn(n1), Scalar(1));
+                bk(k), bn(n1), alpha, beta);
 
             // We are done with the last task for the [m1, n1] block.
             if (k + 1 == nk_) {
@@ -1151,16 +1159,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
     template <int Alignment>
     void run() {
       Barrier barrier(internal::convert_index<int>(num_blocks));
-      for (Index block_idx = 0; block_idx < num_blocks; ++block_idx) {
-        evaluator->m_device.enqueueNoNotification(
-            [this, block_idx, &barrier]() {
-              Index block_start = block_idx * block_size;
-              Index block_end = block_start + actualBlockSize(block_idx);
-
-              processBlock<Alignment>(block_idx, block_start, block_end);
-              barrier.Notify();
-            });
-      }
+      eval<Alignment>(barrier, 0, num_blocks);
       barrier.Wait();
 
       // Aggregate partial sums from l0 ranges.
@@ -1172,38 +1171,7 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
 
     template <int Alignment>
     void runAsync() {
-      for (Index block_idx = 0; block_idx < num_blocks; ++block_idx) {
-        evaluator->m_device.enqueueNoNotification([this, block_idx]() {
-          Index block_start = block_idx * block_size;
-          Index block_end = block_start + actualBlockSize(block_idx);
-
-          processBlock<Alignment>(block_idx, block_start, block_end);
-
-          int v = num_pending_blocks.fetch_sub(1);
-          eigen_assert(v >= 1);
-
-          if (v == 1) {
-            // Aggregate partial sums from l0 ranges.
-            aggregateL0Blocks<Alignment>();
-
-            // Apply output kernel.
-            applyOutputKernel();
-
-            // NOTE: If we call `done` callback before deleting this (context),
-            // it might deallocate Self* pointer captured by context, and we'll
-            // fail in destructor trying to deallocate temporary buffers.
-
-            // Move done call back from context before it will be destructed.
-            DoneCallback done_copy = std::move(done);
-
-            // We are confident that we are the last one who touches context.
-            delete this;
-
-            // Now safely call the done callback.
-            done_copy();
-          }
-        });
-      }
+      evalAsync<Alignment>(0, num_blocks);
     }
 
    private:
@@ -1266,7 +1234,6 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
     template <int Alignment>
     void processBlock(Index block_idx, Index begin, Index end) {
       Scalar* buf = block_buffers[block_idx];
-      ::memset(buf, 0, buffer_size_bytes);
 
       TENSOR_CONTRACTION_DISPATCH(
           evaluator->template evalGemmPartialWithoutOutputKernel, Alignment,
@@ -1395,6 +1362,68 @@ struct TensorEvaluator<const TensorContractionOp<Indices, LeftArgType, RightArgT
       }
       for (; i < n; ++i) {
         dst_buf[i] += src_buf0[i] + src_buf1[i] + src_buf2[i];
+      }
+    }
+
+    template <int Alignment>
+    void eval(Barrier& barrier, Index start_block_idx, Index end_block_idx) {
+      while (end_block_idx - start_block_idx > 1) {
+        Index mid_block_idx = (start_block_idx + end_block_idx) / 2;
+        evaluator->m_device.enqueueNoNotification(
+            [this, &barrier, mid_block_idx, end_block_idx]() {
+              eval<Alignment>(barrier, mid_block_idx, end_block_idx);
+            });
+        end_block_idx = mid_block_idx;
+      }
+
+      Index block_idx = start_block_idx;
+      Index block_start = block_idx * block_size;
+      Index block_end = block_start + actualBlockSize(block_idx);
+
+      processBlock<Alignment>(block_idx, block_start, block_end);
+      barrier.Notify();
+    }
+
+    template <int Alignment>
+    void evalAsync(Index start_block_idx, Index end_block_idx) {
+      while (end_block_idx - start_block_idx > 1) {
+        Index mid_block_idx = (start_block_idx + end_block_idx) / 2;
+        evaluator->m_device.enqueueNoNotification(
+            [this, mid_block_idx, end_block_idx]() {
+              evalAsync<Alignment>(mid_block_idx, end_block_idx);
+            });
+        end_block_idx = mid_block_idx;
+      }
+
+      Index block_idx = start_block_idx;
+
+      Index block_start = block_idx * block_size;
+      Index block_end = block_start + actualBlockSize(block_idx);
+
+      processBlock<Alignment>(block_idx, block_start, block_end);
+
+      int v = num_pending_blocks.fetch_sub(1);
+      eigen_assert(v >= 1);
+
+      if (v == 1) {
+        // Aggregate partial sums from l0 ranges.
+        aggregateL0Blocks<Alignment>();
+
+        // Apply output kernel.
+        applyOutputKernel();
+
+        // NOTE: If we call `done` callback before deleting this (context),
+        // it might deallocate Self* pointer captured by context, and we'll
+        // fail in destructor trying to deallocate temporary buffers.
+
+        // Move done call back from context before it will be destructed.
+        DoneCallback done_copy = std::move(done);
+
+        // We are confident that we are the last one who touches context.
+        delete this;
+
+        // Now safely call the done callback.
+        done_copy();
       }
     }
 

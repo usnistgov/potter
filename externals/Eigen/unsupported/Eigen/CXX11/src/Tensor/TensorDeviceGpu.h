@@ -42,25 +42,26 @@ class StreamInterface {
   virtual unsigned int* semaphore() const = 0;
 };
 
-static gpuDeviceProp_t* m_deviceProperties;
-static bool m_devicePropInitialized = false;
+EIGEN_STRONG_INLINE gpuDeviceProp_t*& getDeviceProperties() {
+  static gpuDeviceProp_t* deviceProperties;
+  return deviceProperties;
+}
+
+EIGEN_STRONG_INLINE bool& getDevicePropInitialized() {
+  static bool devicePropInitialized = false;
+  return devicePropInitialized;
+}
 
 static void initializeDeviceProp() {
-  if (!m_devicePropInitialized) {
+  if (!getDevicePropInitialized()) {
     // Attempts to ensure proper behavior in the case of multiple threads
     // calling this function simultaneously. This would be trivial to
     // implement if we could use std::mutex, but unfortunately mutex don't
     // compile with nvcc, so we resort to atomics and thread fences instead.
     // Note that if the caller uses a compiler that doesn't support c++11 we
     // can't ensure that the initialization is thread safe.
-#if __cplusplus >= 201103L
     static std::atomic<bool> first(true);
     if (first.exchange(false)) {
-#else
-    static bool first = true;
-    if (first) {
-      first = false;
-#endif
       // We're the first thread to reach this point.
       int num_devices;
       gpuError_t status = gpuGetDeviceCount(&num_devices);
@@ -70,9 +71,9 @@ static void initializeDeviceProp() {
                   << std::endl;
         gpu_assert(status == gpuSuccess);
       }
-      m_deviceProperties = new gpuDeviceProp_t[num_devices];
+      getDeviceProperties() = new gpuDeviceProp_t[num_devices];
       for (int i = 0; i < num_devices; ++i) {
-        status = gpuGetDeviceProperties(&m_deviceProperties[i], i);
+        status = gpuGetDeviceProperties(&getDeviceProperties()[i], i);
         if (status != gpuSuccess) {
           std::cerr << "Failed to initialize GPU device #"
                     << i
@@ -83,17 +84,13 @@ static void initializeDeviceProp() {
         }
       }
 
-#if __cplusplus >= 201103L
       std::atomic_thread_fence(std::memory_order_release);
-#endif
-      m_devicePropInitialized = true;
+      getDevicePropInitialized() = true;
     } else {
       // Wait for the other thread to inititialize the properties.
-      while (!m_devicePropInitialized) {
-#if __cplusplus >= 201103L
+      while (!getDevicePropInitialized()) {
         std::atomic_thread_fence(std::memory_order_acquire);
-#endif
-        EIGEN_SLEEP(1000);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       }
     }
   }
@@ -139,7 +136,7 @@ class GpuStreamDevice : public StreamInterface {
 
   const gpuStream_t& stream() const { return *stream_; }
   const gpuDeviceProp_t& deviceProperties() const {
-    return m_deviceProperties[device_];
+    return getDeviceProperties()[device_];
   }
   virtual void* allocate(size_t num_bytes) const {
     gpuError_t err = gpuSetDevice(device_);

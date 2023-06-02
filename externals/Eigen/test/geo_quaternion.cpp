@@ -75,6 +75,13 @@ template<typename Scalar, int Options> void quaternion(void)
   q1.coeffs().setRandom();
   VERIFY_IS_APPROX(q1.coeffs(), (q1*q2).coeffs());
 
+#ifndef EIGEN_NO_IO
+  // Printing
+  std::ostringstream ss;
+  ss << q2;
+  VERIFY(ss.str() == "0i + 0j + 0k + 1");
+#endif
+
   // concatenation
   q1 *= q2;
 
@@ -245,6 +252,14 @@ template<typename Scalar> void mapQuaternion(void){
   // is used to determine whether we can return a coeff by reference or not, which is not enough for Map<const ...>.
   //const MCQuaternionUA& cmcq3(mcq3);
   //VERIFY( &cmcq3.x() == &mcq3.x() );
+
+  // test cast
+  {
+    Quaternion<float> q1f = mq1.template cast<float>();
+    VERIFY_IS_APPROX(q1f.template cast<Scalar>(),mq1);
+    Quaternion<double> q1d = mq1.template cast<double>();
+    VERIFY_IS_APPROX(q1d.template cast<Scalar>(),mq1);
+  }
 }
 
 template<typename Scalar> void quaternionAlignment(void){
@@ -317,7 +332,9 @@ EIGEN_DECLARE_TEST(geo_quaternion)
     CALL_SUBTEST_2(( quaternionAlignment<double>() ));
     CALL_SUBTEST_2( mapQuaternion<double>() );
 
+#ifndef EIGEN_TEST_ANNOYING_SCALAR_DONT_THROW
     AnnoyingScalar::dont_throw = true;
+#endif
     CALL_SUBTEST_3(( quaternion<AnnoyingScalar,AutoAlign>() ));
   }
 }
