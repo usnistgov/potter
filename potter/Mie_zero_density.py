@@ -111,9 +111,24 @@ def plot_Mie_contributions():
     plt.savefig('Mie_contributions.pdf')
     plt.close()
 
+def plot_Mie_etaplus():
+    """ """
+    Tstar = np.linspace(0.4, 20, 1000)
+    fig, (ax1) = plt.subplots(1,1,figsize=(6,4))
+    for n in [12, 24, 48]:
+        etaplus = [get_eta_plus(Tstar_, n=n) for Tstar_ in Tstar]
+        plt.plot(Tstar, etaplus, label=n)
+    ax1.set_xlabel(r'$T^*$')
+    ax1.set_ylabel(r'$\eta^+_{\rho\to 0}$')
+    ax1.legend()
+    fig.tight_layout(pad=0.2)
+    plt.savefig('Mie_etaplus.pdf')
+    plt.close()
+
 if __name__ == '__main__':
     print('These values should be identical (to the level of convergence of the integral); just a quick sanity check')
     print('T^* B2^*(Sadus) B2^*(numerical integration)')
     for Tstar in [0.515501912627262,2.45633644062211,10.1106138574776]:
         print(Tstar, get_Bstar_Sadus(Tstar, n=12, m=6), get_Bstar_scipy(Tstar, n=12, m=6))
-    plot_Mie_contributions()
+    # plot_Mie_contributions()
+    plot_Mie_etaplus()
