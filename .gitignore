@@ -4,3 +4,4 @@
 /externals/Cuba-4.2.2
 /bldnix
 /**/*.pyc
+.DS_Store
