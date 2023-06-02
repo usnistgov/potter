@@ -35,6 +35,7 @@ void check_EXP6(int order, double alpha, const std::string &filename) {
         }
     );
     i.get_evaluator().connect_potentials(f, 1/* number of sites */);
+    i.get_conf_view()["feval_max"] = 1e5;
     
     // B_2^*=B_2/r_m^3
     // B_3^*=B_3/r_m^6
@@ -42,7 +43,7 @@ void check_EXP6(int order, double alpha, const std::string &filename) {
     std::cout << header << std::endl;
     ofs << header << std::endl;
     double Tmin = 1e-1, Tmax = 1e7;
-    int NT = 200;
+    int NT = 2000;
     std::vector<double> Tvec; double dT = (log(Tmax) - log(Tmin)) / (NT - 1); for (auto i = 0; i < NT; ++i) { Tvec.push_back(exp(log(Tmin) + dT * i)); }
     int Nderivs = 6;
     const auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, Nderivs, Tvec, 0.0001, 200); // radius in sigma, B in sigma^3/molecule
@@ -264,13 +265,10 @@ void LJChain(int N, double lsigma, const std::string &filename) {
 
 int main() {
     
-    //check_EXP6(2, 11, "B2_alpha11_EXP6.csv"); 
-    //check_EXP6(2, 12, "B2_alpha12_EXP6.csv");
-    //check_EXP6(2, 13, "B2_alpha13_EXP6.csv");
-    //check_EXP6(2, 14, "B2_alpha14_EXP6.csv");
-    //check_EXP6(2, 15, "B2_alpha15_EXP6.csv");
+    for (auto i : {11,12,13,14,15}){ check_EXP6(2, i, "B2_alpha"+std::to_string(i)+"_EXP6.json"); }
+    
     //check_EXP6(3, 13, "B3_alpha13_EXP6.csv");
-    check_LJ();
+//    check_LJ();
     //check_N2("results_N2.txt");
     //check_CO2_classical("classical_CO2.json");
     //check_Singh();
@@ -286,9 +284,9 @@ int main() {
     //check_CO2_model("ZhangDuan", "results_CO2_ZhangDuan.json");
     //check_CO2_model("HarrisYung", "results_CO2_HarrisYung.json");
 
-    for (auto N = 2; N <= 2; N *= 2){
-        for (auto lsigma = 0.2; lsigma < 1; lsigma += 0.2) {
-            LJChain(N, lsigma, "results" + std::to_string(N) + "_lsigma" + std::to_string(lsigma) + ".csv");
-        }
-    }
+//    for (auto N = 2; N <= 2; N *= 2){
+//        for (auto lsigma = 0.2; lsigma < 1; lsigma += 0.2) {
+//            LJChain(N, lsigma, "results" + std::to_string(N) + "_lsigma" + std::to_string(lsigma) + ".csv");
+//        }
+//    }
 }
