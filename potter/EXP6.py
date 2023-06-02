@@ -86,7 +86,7 @@ def plot_EXP6_transport():
 
     Tstarvec = np.logspace(np.log10(0.41), np.log10(199))
     for alpha in possible_alphas:
-        BI = BFit(os.path.join(here, 'EXP6_data', f'B2_alpha{alpha}_EXP6.json')) # These are B_2/sigma^3, but the EXP6 analysis assumes in terms of B_2/rm^3
+        BI = BFit(os.path.join(here, 'EXP6_data', f'B2_alpha{alpha}_EXP6.json')) # These are B_2/r_m^3
         T_B = BI.get_Boyle()
         
         Theta2 = (BI(Tstarvec) + BI.deriv(Tstarvec)*Tstarvec)**(2/3)
