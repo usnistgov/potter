@@ -31,6 +31,7 @@ void check_EXP6(int order, double alpha, const std::string &filename) {
 
     // Connect the potential
     std::function<double(double)> f([rstarpotmax, valpotmax, alpha](double rstar) {
+        // rstar here is r/r_m
         return (rstar >= rstarpotmax) ? 1/(1-6/alpha) * (6/alpha*exp(alpha*(1-rstar))-pow(rstar, -6)) : valpotmax;
         }
     );
@@ -39,14 +40,11 @@ void check_EXP6(int order, double alpha, const std::string &filename) {
     
     // B_2^*=B_2/r_m^3
     // B_3^*=B_3/r_m^6
-    std::string header = "order,T,B,errest(B),dBdT,errest(dBdT),d2BdT2,errest(d2BdT),neff,elapsed / s";
-    std::cout << header << std::endl;
-    ofs << header << std::endl;
     double Tmin = 1e-1, Tmax = 1e7;
     int NT = 2000;
     std::vector<double> Tvec; double dT = (log(Tmax) - log(Tmin)) / (NT - 1); for (auto i = 0; i < NT; ++i) { Tvec.push_back(exp(log(Tmin) + dT * i)); }
     int Nderivs = 6;
-    const auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, Nderivs, Tvec, 0.0001, 200); // radius in sigma, B in sigma^3/molecule
+    const auto results = i.parallel_B_and_derivs(order, 6 /*Nthreads*/, Nderivs, Tvec, 0.0001, 200); // radius in sigma, B in r_m^3/molecule
 
     // write prettified JSON of results to output file
     std::ofstream o(filename);
@@ -264,8 +262,9 @@ void LJChain(int N, double lsigma, const std::string &filename) {
 }
 
 int main() {
-    
-    for (auto i : {11,12,13,14,15}){ check_EXP6(2, i, "B2_alpha"+std::to_string(i)+"_EXP6.json"); }
+    for (auto i : {11,12,13,14,15}){
+        check_EXP6(2, i, "B2_alpha"+std::to_string(i)+"_EXP6.json");
+    }
     
     //check_EXP6(3, 13, "B3_alpha13_EXP6.csv");
 //    check_LJ();
