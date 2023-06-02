@@ -112,7 +112,9 @@ def plot_Mie_contributions():
     plt.close()
 
 def plot_Mie_etaplus():
-    """ """
+    """ 
+    Plot the values of eta^+ as a function of temperature, to demonstrate how to use the routines 
+    """
     Tstar = np.linspace(0.4, 20, 1000)
     fig, (ax1) = plt.subplots(1,1,figsize=(6,4))
     for n in [12, 24, 48]:
